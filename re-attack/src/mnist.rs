@@ -30,9 +30,10 @@ pub struct MnistConfig {
 impl MnistConfig {
     pub fn init<B: Backend>(self, device: &B::Device) -> Mnist<B> {
         Mnist {
-            conv1: Conv2dConfig::new([1, 8], [1, 8]).init(device),
-            conv2: Conv2dConfig::new([1, 8], [1, 8]).init(device),
-            conv3: Conv2dConfig::new([1, 8], [1, 8]).init(device),
+            //channels[ ]は，多分入力チャネル，出力チャネル
+            conv1: Conv2dConfig::new([1, 8], [3, 3]).init(device),
+            conv2: Conv2dConfig::new([1, 8], [3, 3]).init(device),
+            conv3: Conv2dConfig::new([1, 8], [3, 3]).init(device),
             fc1: LinearConfig::new(16 * 8 * 8, self.hidden_size).init(device),
             fc2: LinearConfig::new(self.hidden_size, self.num_classes).init(device),
             dropout: DropoutConfig::new(self.dropout).init(),

@@ -4,13 +4,13 @@ from torch.optim import Adam
 import torch.nn as nn
 import torch
 
-from models.my_mnist import MnistCNN
+from models.my_cifar10 import Cifar10CNN  # Assuming the model is defined in my_cifar10.py
 
-def train_mnist():
+def train_cifar10():
     # データセットと前処理
     transform = transforms.Compose([transforms.ToTensor()])
-    train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-    test_dataset  = datasets.MNIST(root='./data', train=False, transform=transform)
+    train_dataset = datasets.CIFAR10(root='./data/cifar10', train=True, download=True, transform=transform)
+    test_dataset  = datasets.CIFAR10(root='./data/cifar10', train=False, transform=transform)
 
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_loader  = DataLoader(test_dataset, batch_size=128, shuffle=False)
@@ -27,9 +27,8 @@ def train_mnist():
         print("Using CPU")
 
     # モデル・オプティマイザ定義
-    model = MnistCNN().to(device)
+    model = Cifar10CNN().to(device)
     optimizer = Adam(model.parameters(), lr=1e-4)
-    # 損失関数
     criterion = nn.CrossEntropyLoss()
 
     # 学習ループ（簡易）
