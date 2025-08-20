@@ -3,7 +3,6 @@ use burn::{
     prelude::*,
     tensor::{Int, Tensor},
 };
-use rand::Rng;
 
 #[derive(Debug, Clone)]
 pub struct MnistBather {}
@@ -23,6 +22,7 @@ impl<B: Backend> Batcher<B, MnistItem, MnistBatch<B>> for MnistBather {
                 // example見たら，バックエンドのところがNdArrayだった.なぜ？
                 Tensor::<B, 2>::from_data(data.convert::<B::FloatElem>(), device)
             })
+            .map(|tensor| tensor.reshape([1, 28, 28]))
             // 画素値を平均0，標準偏差1にしているらしい？ 学習を安定させるため？
             .map(|tensor| ((tensor / 255) - 0.1307) / 0.3081)
             .collect();

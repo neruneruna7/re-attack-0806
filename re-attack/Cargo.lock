@@ -4047,7 +4047,6 @@ name = "re-attack"
 version = "0.1.0"
 dependencies = [
  "burn",
- "rand 0.9.2",
 ]
 
 [[package]]

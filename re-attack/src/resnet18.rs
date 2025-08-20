@@ -10,6 +10,11 @@ use burn::{
     prelude::*,
     train::ClassificationOutput,
 };
+
+use crate::data::MnistBatch;
+
+const NUM_CLASSES: usize = 10;
+
 #[derive(Module, Debug)]
 pub struct ResNet18<B: Backend> {
     resnet_input: ResNetInput<B>,
@@ -19,27 +24,24 @@ pub struct ResNet18<B: Backend> {
 }
 
 impl<B: Backend> ResNet18<B> {
-    pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
-        let out = self.resnet_input.forward(x);
-        let out = self
-            .layers
-            .iter()
-            .fold(out, |out, layer| layer.forward(out));
+    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 2> {
+        let [batch_size, height, width] = x.dims();
+        // チャネル数1を加えて，4次元に変換
+        let x = x.reshape([batch_size, 1, height, width]).detach();
+        let x = self.resnet_input.forward(x);
+        let x = self.layers.iter().fold(x, |out, layer| layer.forward(out));
 
-        self.resnet_output.forward(out)
+        self.resnet_output.forward(x)
     }
 
-    pub fn forword_classfication(
-        &self,
-        inputs: Tensor<B, 4>,
-        targets: Tensor<B, 1, Int>,
-    ) -> ClassificationOutput<B> {
-        let logits = self.forward(inputs);
+    pub fn forward_classification(&self, item: MnistBatch<B>) -> ClassificationOutput<B> {
+        let targets = item.targets;
+        let output = self.forward(item.images);
         let loss = CrossEntropyLossConfig::new()
-            .init(&logits.device())
-            .forward(logits.clone(), targets.clone());
+            .init(&output.device())
+            .forward(output.clone(), targets.clone());
 
-        ClassificationOutput::new(loss, logits, targets)
+        ClassificationOutput::new(loss, output, targets)
     }
 }
 
@@ -103,16 +105,16 @@ struct BasicBlock<B: Backend> {
 impl<B: Backend> BasicBlock<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let identity = x.clone();
-
-        let out = self.conv1.forward(x);
-        let out = self.bn1.forward(out);
-        let out = self.activation.forward(out);
-        let out = self.conv2.forward(out);
-        let out = self.bn2.forward(out);
         let shortcut = self.shortcut.forward(identity);
-        let out = out + shortcut;
-        let out = self.activation.forward(out);
-        out
+
+        let x = self.conv1.forward(x);
+        let x = self.bn1.forward(x);
+        let x = self.activation.forward(x);
+        let x = self.conv2.forward(x);
+        let x = self.bn2.forward(x);
+        let x = x + shortcut;
+        let x = self.activation.forward(x);
+        x
     }
 }
 
@@ -148,11 +150,11 @@ struct ResNetInput<B: Backend> {
 
 impl<B: Backend> ResNetInput<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
-        let out = self.conv1.forward(x);
-        let out = self.bn1.forward(out);
-        let out = self.activation.forward(out);
-        let out = self.pool.forward(out);
-        out
+        let x = self.conv1.forward(x);
+        let x = self.bn1.forward(x);
+        let x = self.activation.forward(x);
+        let x = self.pool.forward(x);
+        x
     }
 }
 
@@ -180,9 +182,12 @@ struct ResNetOutput<B: Backend> {
 }
 
 impl<B: Backend> ResNetOutput<B> {
-    fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
-        let out = self.pool.forward(x);
-        self.fc.forward(out)
+    fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 2> {
+        let [batch_size, channel, height, width] = x.dims();
+
+        let x = self.pool.forward(x);
+        let x = x.reshape([batch_size, channel * height * width]);
+        self.fc.forward(x)
     }
 }
 

@@ -7,4 +7,4 @@ edition = "2024"
 burn = { version = "0.18.0", features = ["metal", "train", "vision", "autotune", "metrics",
     "std",
     "fusion",] }
-rand = "0.9.2"
+# rand = "0.9.2"
