@@ -21,7 +21,7 @@ use burn::{
     },
 };
 
-static ARTIFACT_DIR: &str = "/tmp/burn-resnet18-mnist";
+static ARTIFACT_DIR: &str = "./tmp/burn-resnet18-mnist";
 
 #[derive(Config)]
 pub struct MnistTrainingConfig {

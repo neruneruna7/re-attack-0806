@@ -1,8 +1,6 @@
 use burn::{
-    config,
     nn::{
-        BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d,
-        Relu,
+        BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
         loss::CrossEntropyLossConfig,
         pool::{AdaptiveAvgPool2d, AdaptiveAvgPool2dConfig, MaxPool2d, MaxPool2dConfig},
@@ -134,11 +132,16 @@ impl BasicBlockConfig {
     /// 入力チャネル数，出力チャネル数，デバイス
     fn init<B: Backend>(&self, device: &B::Device) -> BasicBlock<B> {
         BasicBlock {
-            conv1: Conv2dConfig::new([self.in_planes, self.out_planes], [3, 3]).init(device),
+            conv1: Conv2dConfig::new([self.in_planes, self.out_planes], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
             bn1: BatchNormConfig::new(self.out_planes).init(device),
-            conv2: Conv2dConfig::new([self.out_planes, self.out_planes], [3, 3]).init(device),
+            conv2: Conv2dConfig::new([self.out_planes, self.out_planes], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
             bn2: BatchNormConfig::new(self.out_planes).init(device),
-            shortcut: Conv2dConfig::new([1, 8], [1, 1]).init(device),
+            // Use the block's input/output channel sizes for the shortcut 1x1 conv
+            shortcut: Conv2dConfig::new([self.in_planes, self.out_planes], [1, 1]).init(device),
             activation: Relu::new(),
         }
     }
@@ -171,7 +174,9 @@ struct ResNetInputConfig {
 impl ResNetInputConfig {
     fn init<B: Backend>(&self, device: &B::Device) -> ResNetInput<B> {
         ResNetInput {
-            conv1: Conv2dConfig::new([self.input_channel, self.in_planes], [3, 3]).init(device),
+            conv1: Conv2dConfig::new([self.input_channel, self.in_planes], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
             bn1: BatchNormConfig::new(self.in_planes).init(device),
             activation: Relu::new(),
             pool: MaxPool2dConfig::new([3, 3]).init(),
