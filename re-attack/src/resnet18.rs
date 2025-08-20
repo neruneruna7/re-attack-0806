@@ -97,17 +97,17 @@ impl ResNet18Config {
             }
             .init(device),
             layer2: BasicBlockConfig {
-                in_planes: self.inplanes,
+                in_planes: 64,
                 out_planes: 128,
             }
             .init(device),
             layer3: BasicBlockConfig {
-                in_planes: self.inplanes,
+                in_planes: 128,
                 out_planes: 256,
             }
             .init(device),
             layer4: BasicBlockConfig {
-                in_planes: self.inplanes,
+                in_planes: 256,
                 out_planes: 512,
             }
             .init(device),
