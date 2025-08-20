@@ -16,24 +16,44 @@ const NUM_CLASSES: usize = 10;
 
 #[derive(Module, Debug)]
 pub struct ResNet18<B: Backend> {
-    resnet_input: ResNetInput<B>,
-    layers: Vec<BasicBlock<B>>,
-    resnet_output: ResNetOutput<B>,
+    // resnet_input: ResNetInput<B>,
+    conv1: Conv2d<B>,
+    bn1: BatchNorm<B, 2>,
     activation: Relu,
+    maxpool: MaxPool2d,
+
+    layer1: BasicBlock<B>,
+    layer2: BasicBlock<B>,
+    layer3: BasicBlock<B>,
+    layer4: BasicBlock<B>,
+    avgpool: AdaptiveAvgPool2d,
+    fc: Linear<B>,
+    // resnet_output: ResNetOutput<B>,
 }
 
 impl<B: Backend> ResNet18<B> {
     pub fn new(device: &B::Device) -> Self {
-        ResNet18Config::new(NUM_CLASSES, 1, 3, 4).init(device)
+        ResNet18Config::new(NUM_CLASSES, 1, 64).init(device)
     }
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 2> {
         let [batch_size, height, width] = x.dims();
         // チャネル数1を加えて，4次元に変換
         let x = x.reshape([batch_size, 1, height, width]).detach();
-        let x = self.resnet_input.forward(x);
-        let x = self.layers.iter().fold(x, |out, layer| layer.forward(out));
+        let x = self.conv1.forward(x);
+        let x = self.bn1.forward(x);
+        let x = self.activation.forward(x);
+        let x = self.maxpool.forward(x);
 
-        self.resnet_output.forward(x)
+        let x = self.layer1.forward(x);
+        let x = self.layer2.forward(x);
+        let x = self.layer3.forward(x);
+        let x = self.layer4.forward(x);
+
+        let x = self.avgpool.forward(x);
+        let [batch_size, channel, height, width] = x.dims();
+        let x = x.reshape([batch_size, channel * height * width]);
+        let x = self.fc.forward(x);
+        x
     }
 
     pub fn forward_classification(&self, item: MnistBatch<B>) -> ClassificationOutput<B> {
@@ -54,36 +74,45 @@ pub struct ResNet18Config {
     hidden_size: usize,
     input_channel: usize,
     inplanes: usize,
-    layers: usize,
+    #[config(default = 1)]
+    block_expansion: usize,
     #[config(default = 0.25)]
     dropout: f64,
 }
 
 impl ResNet18Config {
     pub fn init<B: Backend>(self, device: &B::Device) -> ResNet18<B> {
-        let layers = (0..self.layers)
-            .map(|_| {
-                BasicBlockConfig {
-                    in_planes: self.inplanes,
-                    out_planes: self.inplanes,
-                }
-                .init(device)
-            })
-            .collect::<Vec<_>>();
         ResNet18 {
             //channels[ ]は，多分入力チャネル，出力チャネル
-            resnet_input: ResNetInputConfig {
-                input_channel: self.input_channel,
-                in_planes: self.inplanes,
-            }
-            .init(device),
-            layers,
-            resnet_output: ResNetOutputConfig {
-                block_expansion: 1,
-                num_classes: self.num_classes,
-            }
-            .init(device),
+            conv1: Conv2dConfig::new([self.input_channel, self.inplanes], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
+            bn1: BatchNormConfig::new(self.inplanes).init(device),
             activation: Relu::new(),
+            maxpool: MaxPool2dConfig::new([3, 3]).init(),
+
+            layer1: BasicBlockConfig {
+                in_planes: self.inplanes,
+                out_planes: 64,
+            }
+            .init(device),
+            layer2: BasicBlockConfig {
+                in_planes: self.inplanes,
+                out_planes: 128,
+            }
+            .init(device),
+            layer3: BasicBlockConfig {
+                in_planes: self.inplanes,
+                out_planes: 256,
+            }
+            .init(device),
+            layer4: BasicBlockConfig {
+                in_planes: self.inplanes,
+                out_planes: 512,
+            }
+            .init(device),
+            avgpool: AdaptiveAvgPool2dConfig::new([1, 1]).init(),
+            fc: LinearConfig::new(512 * self.block_expansion, self.num_classes).init(device),
         }
     }
 }
@@ -143,74 +172,6 @@ impl BasicBlockConfig {
             // Use the block's input/output channel sizes for the shortcut 1x1 conv
             shortcut: Conv2dConfig::new([self.in_planes, self.out_planes], [1, 1]).init(device),
             activation: Relu::new(),
-        }
-    }
-}
-
-#[derive(Module, Debug)]
-struct ResNetInput<B: Backend> {
-    conv1: Conv2d<B>,
-    bn1: BatchNorm<B, 2>,
-    activation: Relu,
-    pool: MaxPool2d,
-}
-
-impl<B: Backend> ResNetInput<B> {
-    fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
-        let x = self.conv1.forward(x);
-        let x = self.bn1.forward(x);
-        let x = self.activation.forward(x);
-        let x = self.pool.forward(x);
-        x
-    }
-}
-
-#[derive(Config, Debug)]
-struct ResNetInputConfig {
-    input_channel: usize,
-    in_planes: usize,
-}
-
-impl ResNetInputConfig {
-    fn init<B: Backend>(&self, device: &B::Device) -> ResNetInput<B> {
-        ResNetInput {
-            conv1: Conv2dConfig::new([self.input_channel, self.in_planes], [3, 3])
-                .with_padding(PaddingConfig2d::Same)
-                .init(device),
-            bn1: BatchNormConfig::new(self.in_planes).init(device),
-            activation: Relu::new(),
-            pool: MaxPool2dConfig::new([3, 3]).init(),
-        }
-    }
-}
-
-#[derive(Module, Debug)]
-struct ResNetOutput<B: Backend> {
-    pool: AdaptiveAvgPool2d,
-    fc: Linear<B>,
-}
-
-impl<B: Backend> ResNetOutput<B> {
-    fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 2> {
-        let [batch_size, channel, height, width] = x.dims();
-
-        let x = self.pool.forward(x);
-        let x = x.reshape([batch_size, channel * height * width]);
-        self.fc.forward(x)
-    }
-}
-
-#[derive(Config, Debug)]
-struct ResNetOutputConfig {
-    block_expansion: usize,
-    num_classes: usize,
-}
-
-impl ResNetOutputConfig {
-    fn init<B: Backend>(&self, device: &B::Device) -> ResNetOutput<B> {
-        ResNetOutput {
-            pool: AdaptiveAvgPool2dConfig::new([1, 1]).init(),
-            fc: LinearConfig::new(512 * self.block_expansion, self.num_classes).init(device),
         }
     }
 }
