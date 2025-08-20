@@ -8,7 +8,8 @@ use burn::{
         pool::{AdaptiveAvgPool2d, AdaptiveAvgPool2dConfig, MaxPool2d, MaxPool2dConfig},
     },
     prelude::*,
-    train::ClassificationOutput,
+    tensor::backend::AutodiffBackend,
+    train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep},
 };
 
 use crate::data::MnistBatch;
@@ -24,6 +25,9 @@ pub struct ResNet18<B: Backend> {
 }
 
 impl<B: Backend> ResNet18<B> {
+    pub fn new(device: &B::Device) -> Self {
+        ResNet18Config::new(NUM_CLASSES, 1, 3, 4).init(device)
+    }
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 2> {
         let [batch_size, height, width] = x.dims();
         // チャネル数1を加えて，4次元に変換
@@ -203,5 +207,19 @@ impl ResNetOutputConfig {
             pool: AdaptiveAvgPool2dConfig::new([1, 1]).init(),
             fc: LinearConfig::new(512 * self.block_expansion, self.num_classes).init(device),
         }
+    }
+}
+
+impl<B: AutodiffBackend> TrainStep<MnistBatch<B>, ClassificationOutput<B>> for ResNet18<B> {
+    fn step(&self, item: MnistBatch<B>) -> burn::train::TrainOutput<ClassificationOutput<B>> {
+        let item = self.forward_classification(item);
+
+        TrainOutput::new(self, item.loss.backward(), item)
+    }
+}
+
+impl<B: Backend> ValidStep<MnistBatch<B>, ClassificationOutput<B>> for ResNet18<B> {
+    fn step(&self, item: MnistBatch<B>) -> ClassificationOutput<B> {
+        self.forward_classification(item)
     }
 }
