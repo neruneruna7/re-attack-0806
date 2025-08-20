@@ -345,6 +345,7 @@ dependencies = [
  "burn-candle",
  "burn-core",
  "burn-cuda",
+ "burn-ir",
  "burn-ndarray",
  "burn-remote",
  "burn-rocm",
@@ -4046,6 +4047,7 @@ name = "re-attack"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "rand 0.9.2",
 ]
 
 [[package]]

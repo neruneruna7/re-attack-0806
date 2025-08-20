@@ -3,6 +3,8 @@ from torch.utils.data import DataLoader
 from torch.optim import Adam
 import torch.nn as nn
 import torch
+import torch
+import torchvision.models as models
 
 from models.my_mnist import MnistCNN
 
@@ -27,7 +29,15 @@ def train_mnist():
         print("Using CPU")
 
     # モデル・オプティマイザ定義
-    model = MnistCNN().to(device)
+    # model = MnistCNN().to(device)
+    model = models.resnet18(pretrained=False, num_classes=10)
+    # 1ch入力に対応させる
+    model.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
+
+    # 小さい画像なので maxpool をスキップ（任意）
+    model.maxpool = nn.Identity()
+
+    model.to(device)
     optimizer = Adam(model.parameters(), lr=1e-4)
     # 損失関数
     criterion = nn.CrossEntropyLoss()

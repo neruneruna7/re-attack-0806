@@ -11,8 +11,8 @@ def main():
     print("Hello from re-attack-0806!")
 
     # MNISTの学習を実行
-    # model = mnist_train.train_mnist()
-    model = cifar10_train.train_cifar10()
+    model = mnist_train.train_mnist()
+    # model = cifar10_train.train_cifar10()
 
     # モデルの保存
     torch.save(model.state_dict(), 'weight/cifar10_cnn.pth')
