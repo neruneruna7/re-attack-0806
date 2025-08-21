@@ -84,44 +84,33 @@ impl ResNet18Config {
     pub fn init<B: Backend>(self, device: &B::Device) -> ResNet18<B> {
         ResNet18 {
             //channels[ ]は，多分入力チャネル，出力チャネル
-            conv1: Conv2dConfig::new([self.input_channel, self.inplanes], [3, 3])
-                .with_padding(PaddingConfig2d::Same)
+            conv1: Conv2dConfig::new([self.input_channel, 64], [7, 7])
+                .with_stride([2, 2])
+                .with_padding(PaddingConfig2d::Explicit(3, 3))
                 .init(device),
-            bn1: BatchNormConfig::new(self.inplanes).init(device),
+            bn1: BatchNormConfig::new(64).init(device),
             activation: Relu::new(),
-            maxpool: MaxPool2dConfig::new([3, 3]).init(),
+            maxpool: MaxPool2dConfig::new([3, 3])
+                .with_strides([2, 2])
+                .with_padding(PaddingConfig2d::Explicit(1, 1))
+                .init(),
 
-            layer1: BasicBlockConfig {
-                in_planes: self.inplanes,
-                out_planes: 64,
-            }
-            .init(device),
-            layer2: BasicBlockConfig {
-                in_planes: 64,
-                out_planes: 128,
-            }
-            .init(device),
-            layer3: BasicBlockConfig {
-                in_planes: 128,
-                out_planes: 256,
-            }
-            .init(device),
-            layer4: BasicBlockConfig {
-                in_planes: 256,
-                out_planes: 512,
-            }
-            .init(device),
+            layer1: BasicBlockConfig::new(64, 64).init(device),
+            layer2: BasicBlockConfig::new(64, 128)
+                .with_stride([2, 2])
+                .init(device),
+            layer3: BasicBlockConfig::new(128, 256)
+                .with_stride([2, 2])
+                .init(device),
+            layer4: BasicBlockConfig::new(256, 512)
+                .with_stride([2, 2])
+                .init(device),
             avgpool: AdaptiveAvgPool2dConfig::new([1, 1]).init(),
             fc: LinearConfig::new(512 * self.block_expansion, self.num_classes).init(device),
         }
     }
 }
 
-// fn conv3x3(in_planes: usize, out_planes: usize, stride: usize) -> Conv2dConfig {
-//     Conv2dConfig::new([in_planes, out_planes], [3, 3])
-//         .with_stride([1, 1])
-//         .with_padding(PaddingConfig2d::)
-// }
 #[derive(Module, Debug)]
 struct BasicBlock<B: Backend> {
     conv1: Conv2d<B>,
@@ -129,14 +118,18 @@ struct BasicBlock<B: Backend> {
     bn1: BatchNorm<B, 2>,
     conv2: Conv2d<B>,
     bn2: BatchNorm<B, 2>,
-    shortcut: Conv2d<B>,
+    shortcut: Option<DownSample<B>>,
     activation: Relu,
 }
 
 impl<B: Backend> BasicBlock<B> {
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let identity = x.clone();
-        let shortcut = self.shortcut.forward(identity);
+        let shortcut = if let Some(shortcut) = &self.shortcut {
+            shortcut.forward(identity)
+        } else {
+            identity
+        };
 
         let x = self.conv1.forward(x);
         let x = self.bn1.forward(x);
@@ -155,11 +148,21 @@ struct BasicBlockConfig {
     in_planes: usize,
     /// 出力チャネル数
     out_planes: usize,
+    /// カーネルの移動距離
+    #[config(default = "[1, 1]")]
+    stride: [usize; 2],
+    #[config(default = 1)]
+    dilation: usize,
 }
 
 impl BasicBlockConfig {
     /// 入力チャネル数，出力チャネル数，デバイス
     fn init<B: Backend>(&self, device: &B::Device) -> BasicBlock<B> {
+        let downsample = if self.stride != [1, 1] || self.in_planes != self.out_planes {
+            Some(DownSampleConfig::new(self.in_planes, self.out_planes, self.stride).init(device))
+        } else {
+            None
+        };
         BasicBlock {
             conv1: Conv2dConfig::new([self.in_planes, self.out_planes], [3, 3])
                 .with_padding(PaddingConfig2d::Same)
@@ -170,8 +173,39 @@ impl BasicBlockConfig {
                 .init(device),
             bn2: BatchNormConfig::new(self.out_planes).init(device),
             // Use the block's input/output channel sizes for the shortcut 1x1 conv
-            shortcut: Conv2dConfig::new([self.in_planes, self.out_planes], [1, 1]).init(device),
+            shortcut: downsample,
             activation: Relu::new(),
+        }
+    }
+}
+
+#[derive(Module, Debug)]
+struct DownSample<B: Backend> {
+    conv: Conv2d<B>,
+    bn: BatchNorm<B, 2>,
+}
+
+impl<B: Backend> DownSample<B> {
+    fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
+        let x = self.conv.forward(x);
+        self.bn.forward(x)
+    }
+}
+
+#[derive(Config, Debug)]
+struct DownSampleConfig {
+    in_planes: usize,
+    out_planes: usize,
+    stride: [usize; 2],
+}
+
+impl DownSampleConfig {
+    fn init<B: Backend>(&self, device: &B::Device) -> DownSample<B> {
+        DownSample {
+            conv: Conv2dConfig::new([self.in_planes, self.out_planes], [1, 1])
+                .with_stride(self.stride)
+                .init(device),
+            bn: BatchNormConfig::new(self.out_planes).init(device),
         }
     }
 }
