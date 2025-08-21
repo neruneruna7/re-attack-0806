@@ -9,7 +9,8 @@ use burn::backend::{
 };
 
 fn main() {
-    println!("Hello, world!");
+    // tracing_subscriber::fmt().init();
+
     let device = WgpuDevice::default();
     train::run::<Autodiff<Metal>>(device);
 }

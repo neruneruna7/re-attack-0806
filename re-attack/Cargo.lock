@@ -4047,6 +4047,8 @@ name = "re-attack"
 version = "0.1.0"
 dependencies = [
  "burn",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
