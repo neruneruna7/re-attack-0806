@@ -47,25 +47,22 @@ impl<B: Backend> ResNet18<B> {
         let x = self.maxpool.forward(x);
 
         info!("before block layer, shape: {:?}", x.dims());
-        println!("0");
         let x = self.layer1.forward(x);
         // todo!("debug end");
         info!("after block layer 1, shape: {:?}", x.dims());
-        println!("1");
         let x = self.layer2.forward(x);
         info!("after block layer 2, shape: {:?}", x.dims());
-        println!("2");
         let x = self.layer3.forward(x);
         info!("after block layer 3, shape: {:?}", x.dims());
-        println!("3");
         let x = self.layer4.forward(x);
         info!("after block layer 4, shape: {:?}", x.dims());
-        println!("4");
 
         let x = self.avgpool.forward(x);
         let [batch_size, channel, height, width] = x.dims();
         let x = x.reshape([batch_size, channel * height * width]);
         let x = self.fc.forward(x);
+        todo!("debug end");
+
         x
     }
 
@@ -195,28 +192,28 @@ impl<B: Backend> BasicBlock<B> {
         };
 
         // メイン経路
-        let mut out = self.conv1.forward(x);
-        info!("After conv1 shape: {:?}", out.dims());
-        out = self.bn1.forward(out);
-        out = self.activation.forward(out);
+        let x = self.conv1.forward(x);
+        info!("After conv1 shape: {:?}", x.dims());
+        let x = self.bn1.forward(x);
+        let x = self.activation.forward(x);
 
-        out = self.conv2.forward(out);
-        info!("After conv2 shape: {:?}", out.dims());
-        out = self.bn2.forward(out);
+        let x = self.conv2.forward(x);
+        info!("After conv2 shape: {:?}", x.dims());
+        let x = self.bn2.forward(x);
 
         // ここで形状が合わない場合は明示的にログを出して panic する
-        if out.dims() != shortcut.dims() {
+        if x.dims() != shortcut.dims() {
             panic!(
                 "BasicBlock: shape mismatch between main and shortcut \n
                 Shape mismatch before add: main={:?}, shortcut={:?}",
-                out.dims(),
+                x.dims(),
                 shortcut.dims(),
             );
         }
 
-        let out = out + shortcut;
-        let out = self.activation.forward(out);
-        out
+        let x = x + shortcut;
+        let x = self.activation.forward(x);
+        x
     }
 }
 
@@ -238,15 +235,6 @@ struct BasicBlockConfig {
 impl BasicBlockConfig {
     /// 入力チャネル数，出力チャネル数，デバイス
     fn init<B: Backend>(&self, device: &B::Device) -> BasicBlock<B> {
-        println!(
-            "BasicBlockConfig.init: in={}, out={}, stride={:?}",
-            self.in_planes, self.out_planes, self.stride
-        );
-        // let downsample = if self.stride != [1, 1] || self.in_planes != self.out_planes {
-        //     Some(DownSampleConfig::new(self.in_planes, self.out_planes, self.stride).init(device))
-        // } else {
-        //     None
-        // };
         BasicBlock {
             conv1: Conv2dConfig::new([self.in_planes, self.out_planes], [3, 3])
                 .with_stride(self.stride)
