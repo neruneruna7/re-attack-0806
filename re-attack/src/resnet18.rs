@@ -29,6 +29,7 @@ pub struct ResNet18<B: Backend> {
     layer4: ResNetLayer<B>,
     avgpool: AdaptiveAvgPool2d,
     fc: Linear<B>,
+    input_channel: usize,
     // resnet_output: ResNetOutput<B>,
 }
 
@@ -40,7 +41,9 @@ impl<B: Backend> ResNet18<B> {
     pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 2> {
         let [batch_size, height, width] = x.dims();
         // チャネル数1を加えて，4次元に変換
-        let x = x.reshape([batch_size, 1, height, width]).detach();
+        let x = x
+            .reshape([batch_size, self.input_channel, height, width])
+            .detach();
         let x = self.conv1.forward(x);
         let x = self.bn1.forward(x);
         let x = self.activation.forward(x);
@@ -57,8 +60,9 @@ impl<B: Backend> ResNet18<B> {
         info!("after block layer 4, shape: {:?}", x.dims());
 
         let x = self.avgpool.forward(x);
-        let [batch_size, channel, height, width] = x.dims();
-        let x = x.reshape([batch_size, channel * height * width]);
+        // let [batch_size, channel, height, width] = x.dims();
+        // let x = x.reshape([batch_size, channel * height * width]);
+        let x = x.flatten(1, 3);
         let x = self.fc.forward(x);
         // todo!("debug end");
 
@@ -97,6 +101,10 @@ impl ResNet18Config {
                 .with_stride([2, 2])
                 .with_padding(PaddingConfig2d::Explicit(3, 3))
                 .with_bias(false)
+                .with_initializer(nn::Initializer::KaimingNormal {
+                    gain: (2.0_f64).sqrt(),
+                    fan_out_only: true,
+                })
                 .init(device),
             bn1: BatchNormConfig::new(64).init(device),
             activation: Relu::new(),
@@ -111,6 +119,7 @@ impl ResNet18Config {
             layer4: ResNetLayerConfig::new(256, 512, [2, 2]).init(device),
             avgpool: AdaptiveAvgPool2dConfig::new([1, 1]).init(),
             fc: LinearConfig::new(512 * self.block_expansion, self.num_classes).init(device),
+            input_channel: self.input_channel,
         }
     }
 }
@@ -238,10 +247,12 @@ impl BasicBlockConfig {
             conv1: Conv2dConfig::new([self.in_planes, self.out_planes], [3, 3])
                 .with_stride(self.stride)
                 .with_padding(PaddingConfig2d::Explicit(1, 1))
+                .with_bias(false)
                 .init(device),
             bn1: BatchNormConfig::new(self.out_planes).init(device),
             conv2: Conv2dConfig::new([self.out_planes, self.out_planes], [3, 3])
                 .with_padding(PaddingConfig2d::Explicit(1, 1))
+                .with_bias(false)
                 .init(device),
             bn2: BatchNormConfig::new(self.out_planes).init(device),
             // Use the block's input/output channel sizes for the shortcut 1x1 conv
