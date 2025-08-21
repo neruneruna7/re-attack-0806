@@ -48,7 +48,6 @@ impl<B: Backend> ResNet18<B> {
 
         info!("before block layer, shape: {:?}", x.dims());
         let x = self.layer1.forward(x);
-        // todo!("debug end");
         info!("after block layer 1, shape: {:?}", x.dims());
         let x = self.layer2.forward(x);
         info!("after block layer 2, shape: {:?}", x.dims());
@@ -61,7 +60,7 @@ impl<B: Backend> ResNet18<B> {
         let [batch_size, channel, height, width] = x.dims();
         let x = x.reshape([batch_size, channel * height * width]);
         let x = self.fc.forward(x);
-        todo!("debug end");
+        // todo!("debug end");
 
         x
     }
