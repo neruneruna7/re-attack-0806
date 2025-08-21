@@ -165,6 +165,7 @@ impl BasicBlockConfig {
         };
         BasicBlock {
             conv1: Conv2dConfig::new([self.in_planes, self.out_planes], [3, 3])
+                .with_stride(self.stride)
                 .with_padding(PaddingConfig2d::Same)
                 .init(device),
             bn1: BatchNormConfig::new(self.out_planes).init(device),
