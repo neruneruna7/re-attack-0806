@@ -1,4 +1,5 @@
 use crate::{
+    ARTIFACT_DIR,
     data::MnistBacher,
     resnet18::{ResNet18, ResNet18Config},
 };
@@ -21,10 +22,9 @@ use burn::{
     },
 };
 
-static ARTIFACT_DIR: &str = "./tmp/burn-resnet18-mnist";
-
 #[derive(Config)]
 pub struct MnistTrainingConfig {
+    pub model: ResNet18Config,
     #[config(default = 10)]
     pub num_epochs: usize,
 
@@ -46,14 +46,17 @@ fn create_artifact_dir(artifact_dir: &str) {
     std::fs::create_dir_all(artifact_dir).ok();
 }
 
-pub fn run<B: AutodiffBackend>(device: B::Device) {
-    create_artifact_dir(ARTIFACT_DIR);
+pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, device: B::Device) {
+    create_artifact_dir(artifact_dir);
+    config
+        .save(format!("{artifact_dir}/config.json"))
+        .expect("Config should be saved successfully");
 
-    let config_optimizer = AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(5e-5)));
-    let config = MnistTrainingConfig::new(config_optimizer);
+    // let config_optimizer = AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(5e-5)));
+    // let config = MnistTrainingConfig::new(config_optimizer);
     B::seed(config.seed);
 
-    let model = ResNet18::<B>::new(&device);
+    // let model = ResNet18::<B>::new(&device);
 
     // データ
     let batcher = MnistBacher::default();
@@ -92,18 +95,15 @@ pub fn run<B: AutodiffBackend>(device: B::Device) {
         .devices(vec![device.clone()])
         .num_epochs(config.num_epochs)
         .summary()
-        .build(model, config.optimizer.init(), 1e-4);
+        .build(
+            config.model.init::<B>(&device),
+            config.optimizer.init(),
+            1e-4,
+        );
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 
-    config
-        .save(format!("{ARTIFACT_DIR}/config.json").as_str())
-        .unwrap();
-
     model_trained
-        .save_file(
-            format!("{ARTIFACT_DIR}/model"),
-            &NoStdTrainingRecorder::new(),
-        )
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Failed to save trained model");
 }
