@@ -15,7 +15,7 @@ fn main() {
 
     let device = WgpuDevice::default();
     // train::run::<Autodiff<Metal>>(device);
-    infer::infer::<Autodiff<Metal>>(
+    infer::fgsm::<Autodiff<Metal>>(
         ARTIFACT_DIR,
         device,
         burn::data::dataset::vision::MnistDataset::test()
