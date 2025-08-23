@@ -23,40 +23,40 @@ class Net(nn.Module):
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x):
-        print("forward")
-        print("1", x.shape)
+        # print("forward")
+        # print("1", x.shape)
         x = self.conv1(x)
-        print("conv1", x.shape)
+        # print("conv1", x.shape)
         x = F.relu(x)
-        print("conv1_relu", x.shape)
+        # print("conv1_relu", x.shape)
 
         x = self.conv2(x)
-        print("conv2", x.shape)
+        # print("conv2", x.shape)
 
         x = F.relu(x)
-        print("conv2_relu", x.shape)
+        # print("conv2_relu", x.shape)
 
         x = F.max_pool2d(x, 2)
-        print("max_pool", x.shape)
+        # print("max_pool", x.shape)
 
         x = self.dropout1(x)
-        print("dropout1", x.shape)
+        # print("dropout1", x.shape)
 
         x = torch.flatten(x, 1)
-        print("flatten", x.shape)
+        # print("flatten", x.shape)
 
         x = self.fc1(x)
-        print("fc1", x.shape)
+        # print("fc1", x.shape)
 
         x = F.relu(x)
-        print("fc1_relu", x.shape)
+        # print("fc1_relu", x.shape)
 
         x = self.dropout2(x)
-        print("dropout2", x.shape)
+        # print("dropout2", x.shape)
 
         x = self.fc2(x)
-        print("fc2", x.shape)
-        print("")
+        # print("fc2", x.shape)
+        # print("")
 
 
         output = F.log_softmax(x, dim=1)
@@ -87,19 +87,19 @@ model.eval()
 # FGSM attack code
 def fgsm_attack(image, epsilon, data_grad):
     # すべて４次元テンソル
-    print("fgsm_attack")
-    print("image_shape", image.shape)
-    print("data_grad_shape", data_grad.shape)
+    # print("fgsm_attack")
+    # print("image_shape", image.shape)
+    # print("data_grad_shape", data_grad.shape)
     # Collect the element-wise sign of the data gradient
     sign_data_grad = data_grad.sign()
-    print("sign_data_grad_shape", sign_data_grad.shape)
+    # print("sign_data_grad_shape", sign_data_grad.shape)
     # Create the perturbed image by adjusting each pixel of the input image
     perturbed_image = image + epsilon*sign_data_grad
-    print("perturbed_image_shape", perturbed_image.shape)
+    # print("perturbed_image_shape", perturbed_image.shape)
     # Adding clipping to maintain [0,1] range
     perturbed_image = torch.clamp(perturbed_image, 0, 1)
-    print("clamped_perturbed_image_shape", perturbed_image.shape)
-    print("")
+    # print("clamped_perturbed_image_shape", perturbed_image.shape)
+    # print("")
     # Return the perturbed image
     return perturbed_image
 
@@ -121,19 +121,19 @@ def denorm(batch, mean=[0.1307], std=[0.3081]):
     if isinstance(std, list):
         std = torch.tensor(std).to(device)
 
-    print("batch_shape", batch.shape) 
-    #バッチは４次元
+    # print("batch_shape", batch.shape) 
+    # #バッチは４次元
 
-    print("mean_shape", mean.shape)
-    # 1次元
-    print(mean.view(1, -1, 1, 1).shape)
-    # 4次元
+    # print("mean_shape", mean.shape)
+    # # 1次元
+    # print(mean.view(1, -1, 1, 1).shape)
+    # # 4次元
 
-    print("std_shape", std.shape)
-    # 1次元
-    print(std.view(1, -1, 1, 1).shape)
-    # 4次元
-    print("")
+    # print("std_shape", std.shape)
+    # # 1次元
+    # print(std.view(1, -1, 1, 1).shape)
+    # # 4次元
+    # print("")
 
     return batch * std.view(1, -1, 1, 1) + mean.view(1, -1, 1, 1)
 
@@ -145,12 +145,12 @@ def test( model, device, test_loader, epsilon ):
 
     # Loop over all examples in test set
     for data, target in test_loader:
-        print("test loop")
-        print("data_shape", data.shape)
-        # 4
-        print("target_shape", target.shape)
-        # 1
-        print("")
+        # print("test loop")
+        # print("data_shape", data.shape)
+        # # 4
+        # print("target_shape", target.shape)
+        # # 1
+        # print("")
 
 
         # Send the data and label to the device
@@ -204,6 +204,8 @@ def test( model, device, test_loader, epsilon ):
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
+        # print(f"predicted: {final_pred.item()}, expected: {target.item()}")
+
 
     # Calculate final accuracy for this epsilon
     final_acc = correct/float(len(test_loader))

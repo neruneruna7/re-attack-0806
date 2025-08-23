@@ -42,15 +42,15 @@ impl<B: Backend> ResNet18<B> {
         let x = self.activation.forward(x);
         let x = self.maxpool.forward(x);
 
-        info!("before block layer, shape: {:?}", x.dims());
+        // info!("before block layer, shape: {:?}", x.dims());
         let x = self.layer1.forward(x);
-        info!("after block layer 1, shape: {:?}", x.dims());
+        // info!("after block layer 1, shape: {:?}", x.dims());
         let x = self.layer2.forward(x);
-        info!("after block layer 2, shape: {:?}", x.dims());
+        // info!("after block layer 2, shape: {:?}", x.dims());
         let x = self.layer3.forward(x);
-        info!("after block layer 3, shape: {:?}", x.dims());
+        // info!("after block layer 3, shape: {:?}", x.dims());
         let x = self.layer4.forward(x);
-        info!("after block layer 4, shape: {:?}", x.dims());
+        // info!("after block layer 4, shape: {:?}", x.dims());
 
         let x = self.avgpool.forward(x);
         // let [batch_size, channel, height, width] = x.dims();
@@ -187,25 +187,25 @@ impl<B: Backend> BasicBlock<B> {
         // ショートカットを先に計算（現在の実装の流れ）
         let shortcut = if let Some(shortcut) = &self.shortcut {
             let s = shortcut.forward(identity.clone());
-            info!(
-                "BasicBlock shortcut shape: main_input={:?} -> shortcut={:?}",
-                id_dims,
-                s.dims()
-            );
+            // info!(
+            //     "BasicBlock shortcut shape: main_input={:?} -> shortcut={:?}",
+            //     id_dims,
+            //     s.dims()
+            // );
             s
         } else {
-            info!("BasicBlock shortcut: None, input shape: {:?}", id_dims);
+            // info!("BasicBlock shortcut: None, input shape: {:?}", id_dims);
             identity.clone()
         };
 
         // メイン経路
         let x = self.conv1.forward(x);
-        info!("After conv1 shape: {:?}", x.dims());
+        // info!("After conv1 shape: {:?}", x.dims());
         let x = self.bn1.forward(x);
         let x = self.activation.forward(x);
 
         let x = self.conv2.forward(x);
-        info!("After conv2 shape: {:?}", x.dims());
+        // info!("After conv2 shape: {:?}", x.dims());
         let x = self.bn2.forward(x);
 
         // ここで形状が合わない場合は明示的にログを出して panic する
