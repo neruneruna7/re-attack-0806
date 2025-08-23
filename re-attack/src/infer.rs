@@ -1,7 +1,8 @@
 use burn::{
     config::Config,
-    data::{dataloader::batcher::Batcher, dataset::vision::MnistItem},
+    data::{self, dataloader::batcher::Batcher, dataset::vision::MnistItem},
     module::Module,
+    prelude::Backend,
     record::{CompactRecorder, Recorder},
     tensor::{Int, Tensor, TensorData, backend::AutodiffBackend, cast::ToElement},
 };
@@ -11,6 +12,9 @@ use crate::{
     resnet18::ResNet18,
     train::MnistTrainingConfig,
 };
+
+const STD: f64 = 0.3081;
+const MEAN: f64 = 0.1307;
 
 pub fn infer<B: AutodiffBackend>(artifact_dir: &str, device: B::Device, item: MnistItem) {
     let model = load::<B>(artifact_dir, &device);
@@ -31,11 +35,11 @@ pub fn infer<B: AutodiffBackend>(artifact_dir: &str, device: B::Device, item: Mn
     println!("Predicted: {predicated}, Expected: {label}");
 }
 
-pub fn fgsm_attack<B: AutodiffBackend>(
-    image: Tensor<B, 2>,
+pub fn fgsm_attack<B: Backend>(
+    image: Tensor<B, 4>,
     epsilon: f32,
-    data_grad: Tensor<B, 2>,
-) -> Tensor<B, 2> {
+    data_grad: Tensor<B, 4>,
+) -> Tensor<B, 4> {
     let sign_data_grad = data_grad.sign();
     let perturbed_image = image + epsilon * sign_data_grad;
     perturbed_image.clamp(0.0, 1.0)
@@ -84,6 +88,7 @@ pub fn fgsm<B: AutodiffBackend>(artifact_dir: &str, device: B::Device, item: Mni
         .reshape([batch_size, 1, height, width])
         .detach();
 
+    let image = image.require_grad();
     let output = model.forward(image.clone());
 
     let predicated = output.clone().argmax(1).flatten::<1>(0, 1).into_scalar();
@@ -102,14 +107,30 @@ pub fn fgsm<B: AutodiffBackend>(artifact_dir: &str, device: B::Device, item: Mni
 
     // 逆伝播
     let grad = loss.backward();
-    let data_grad = image.grad(&grad).unwrap();
+    let data_grad: Tensor<<B as AutodiffBackend>::InnerBackend, 4> = image.grad(&grad).unwrap();
 
     // 正規化解除
-    let data_denorm = denorm::<B, 1>(image, [0.1307], [0.3081], &device);
+    let data_denorm = denorm::<B, 1>(image, [MEAN], [STD], &device);
+    // 自動微分バックエンドではなく，通常のバックエンドに変換
+    let data_denorm = data_denorm.inner();
 
-    todo!()
+    // fgsm攻撃
+    let perturbed_data = fgsm_attack(data_denorm, 0.3, data_grad);
+
+    let perturbed_data_normalized = (perturbed_data - MEAN) / STD;
+    // 自動微分バックエンドに再変換
+    let perturbed_data_normalized = Tensor::from_inner(perturbed_data_normalized);
+    // 再分類
+    let output_adv = model.forward(perturbed_data_normalized);
+
+    let final_pred = output_adv.argmax(1).flatten::<1>(0, 1).into_scalar();
+    println!("Final Predicted: {final_pred}, Expected: {label}");
+    if final_pred.to_u8() == label {
+        println!("The attack failed.");
+    } else {
+        println!("The attack succeeded.");
+    }
 }
-
 fn denorm<B: AutodiffBackend, const C: usize>(
     tensor: Tensor<B, 4>,
     mean: [f64; C],
