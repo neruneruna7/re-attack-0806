@@ -29,8 +29,6 @@ pub struct ResNet18<B: Backend> {
     layer4: ResNetLayer<B>,
     avgpool: AdaptiveAvgPool2d,
     fc: Linear<B>,
-    input_channel: usize,
-    // resnet_output: ResNetOutput<B>,
 }
 
 impl<B: Backend> ResNet18<B> {
@@ -38,12 +36,7 @@ impl<B: Backend> ResNet18<B> {
         ResNet18Config::new(NUM_CLASSES, 1, 64).init(device)
     }
     #[instrument(skip(self, x))]
-    pub fn forward(&self, x: Tensor<B, 3>) -> Tensor<B, 2> {
-        let [batch_size, height, width] = x.dims();
-        // チャネル数1を加えて，4次元に変換
-        let x = x
-            .reshape([batch_size, self.input_channel, height, width])
-            .detach();
+    pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 2> {
         let x = self.conv1.forward(x);
         let x = self.bn1.forward(x);
         let x = self.activation.forward(x);
@@ -69,9 +62,16 @@ impl<B: Backend> ResNet18<B> {
         x
     }
 
-    pub fn forward_classification(&self, item: MnistBatch<B>) -> ClassificationOutput<B> {
-        let targets = item.targets;
-        let output = self.forward(item.images);
+    pub fn forward_classification(&self, batch: MnistBatch<B>) -> ClassificationOutput<B> {
+        let targets = batch.targets;
+        let [batch_size, height, width] = batch.images.dims();
+        // チャネル数1を加えて，4次元に変換
+        let image = batch
+            .images
+            .reshape([batch_size, 1, height, width])
+            .detach();
+
+        let output = self.forward(image);
         let loss = CrossEntropyLossConfig::new()
             .init(&output.device())
             .forward(output.clone(), targets.clone());
@@ -119,7 +119,6 @@ impl ResNet18Config {
             layer4: ResNetLayerConfig::new(256, 512, [2, 2]).init(device),
             avgpool: AdaptiveAvgPool2dConfig::new([1, 1]).init(),
             fc: LinearConfig::new(512 * self.block_expansion, self.num_classes).init(device),
-            input_channel: self.input_channel,
         }
     }
 }

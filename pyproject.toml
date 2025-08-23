@@ -8,4 +8,6 @@ dependencies = [
     "torch",
     "torchvision",
     "einops",
+    "matplotlib",
+    "numpy"
 ]
