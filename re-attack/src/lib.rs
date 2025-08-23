@@ -1,5 +1,6 @@
 // mod mnist;
 pub mod data;
+pub mod fgsm;
 pub mod infer;
 pub mod resnet18;
 pub mod train;

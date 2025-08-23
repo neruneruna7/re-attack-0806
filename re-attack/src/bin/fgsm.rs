@@ -5,7 +5,7 @@ use burn::{
     },
     data::dataset::Dataset as _,
 };
-use re_attack::{infer, train};
+use re_attack::{fgsm, infer, train};
 
 use re_attack::ARTIFACT_DIR;
 
@@ -15,7 +15,7 @@ fn main() {
 
     let device = WgpuDevice::default();
     // train::run::<Autodiff<Metal>>(device);
-    infer::fgsm::<Autodiff<Metal>>(
+    fgsm::fgsm::<Autodiff<Metal>>(
         ARTIFACT_DIR,
         device,
         burn::data::dataset::vision::MnistDataset::test()
