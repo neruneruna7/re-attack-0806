@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torch import Tensor
 
+from attacks import fgsm_attack
+
 epsilons = [0, .05, .1, .15, .2, .25, .3]
 pretrained_model = "data/lenet_mnist_model.pth"
 # Set random seed for reproducibility
@@ -85,61 +87,43 @@ model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_
 # Set the model in evaluation mode. In this case this is for the Dropout layers
 model.eval()
 
-# FGSM attack code
-def fgsm_attack(image: Tensor, epsilon: float, target: Tensor) -> Tensor:
-    """
-    image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
-    epsilon: ピクセルスケールの摂動量
-    target: 正解ラベルテンソル (device 上)
-    戻り値: perturbed_image (非正規化, clamp され detach 済み)
-    """
-    # mean/std on device
-    mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
-    std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
+# # FGSM attack code
+# def fgsm_attack(image: Tensor, epsilon: float, target: Tensor) -> Tensor:
+#     """
+#     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
+#     epsilon: ピクセルスケールの摂動量
+#     target: 正解ラベルテンソル (device 上)
+#     戻り値: perturbed_image (非正規化, clamp され detach 済み)
+#     """
+#     # mean/std on device
+#     mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
+#     std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
 
-    # prepare normalized input as a leaf with requires_grad
-    image_denorm = image.clone().detach().to(device)
-    image_norm = (image_denorm - mean) / std
-    image_norm = image_norm.clone().detach().requires_grad_(True)
+#     # prepare normalized input as a leaf with requires_grad
+#     image_denorm = image.clone().detach().to(device)
+#     image_norm = (image_denorm - mean) / std
+#     image_norm = image_norm.clone().detach().requires_grad_(True)
 
-    # forward / loss / backward (local, does not modify external tensors)
-    output = model(image_norm)
-    loss = F.nll_loss(output, target)
-    model.zero_grad()
-    # backward to get dL/dx_norm
-    loss.backward()
-    data_grad_norm = image_norm.grad.data  # gradient w.r.t. normalized input
+#     # forward / loss / backward (local, does not modify external tensors)
+#     output = model(image_norm)
+#     loss = F.nll_loss(output, target)
+#     model.zero_grad()
+#     # backward to get dL/dx_norm
+#     loss.backward()
+#     data_grad_norm = image_norm.grad.data  # gradient w.r.t. normalized input
 
-    # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
-    grad_pixel = data_grad_norm / std
+#     # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
+#     grad_pixel = data_grad_norm / std
 
-    # FGSM in pixel space
-    sign_data_grad = grad_pixel.sign()
-    perturbed = image_denorm + epsilon * sign_data_grad
-    perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
+#     # FGSM in pixel space
+#     sign_data_grad = grad_pixel.sign()
+#     perturbed = image_denorm + epsilon * sign_data_grad
+#     perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
 
-    # cleanup grads to avoid side effects
-    image_norm.grad = None
+#     # cleanup grads to avoid side effects
+#     image_norm.grad = None
 
-    return perturbed
-
-# def fgsm_reattack(attacked_image: Tensor, epsilon: float, data_grad: Tensor) -> Tensor:
-#     # すべて４次元テンソル
-#     # print("fgsm_reattack")
-#     # print("attacked_image_shape", attacked_image.shape)
-#     # print("data_grad_shape", data_grad.shape)
-#     # Collect the element-wise sign of the data gradient
-#     sign_data_grad = data_grad.sign()
-#     # print("sign_data_grad_shape", sign_data_grad.shape)
-#     # Create the perturbed image by adjusting each pixel of the input image
-#     perturbed_image = attacked_image - epsilon*sign_data_grad
-#     # print("perturbed_image_shape", perturbed_image.shape)
-#     # Adding clipping to maintain [0,1] range
-#     perturbed_image = torch.clamp(perturbed_image, 0, 1)
-#     # print("clamped_perturbed_image_shape", perturbed_image.shape)
-#     # print("")
-#     # Return the perturbed image
-#     return perturbed_image
+#     return perturbed
 
 # restores the tensors to their original scale
 def denorm(batch, mean=[0.1307], std=[0.3081]):
@@ -182,37 +166,22 @@ def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tenso
     steps: 繰り返す回数
     戻り値: 最終的に得られる非正規化テンソル（clamped, detach済み）
     """
-    # mean/std tensors on device
-    mean = torch.tensor([0.1307], device=device).view(1, -1, 1, 1)
-    std = torch.tensor([0.3081], device=device).view(1, -1, 1, 1)
+    # ensure target has batch dimension (shape [B])
+    if target.dim() == 0:
+        target = target.unsqueeze(0)
 
-    adv = perturbed_denorm.clone().detach()  # start from given perturbed image (非正規化)
+    # start from given perturbed image (非正規化)
+    adv = perturbed_denorm.clone().detach()
+
+    # 繰り返しで再攻撃：各ステップで fgsm_attack を呼ぶ
     for _ in range(steps):
-        adv.requires_grad = True
-
-        # normalize for the model
-        adv_normalized = (adv - mean) / std
-
-        # forward / loss / backward to get gradient w.r.t. adv (denorm space through normalization ops)
-        output = model(adv_normalized)
-        loss = F.nll_loss(output, target)
-        model.zero_grad()
-        # ensure previous grads cleared
-        if adv.grad is not None:
-            adv.grad.zero_()
-        loss.backward()
-
-        # data_grad is gradient wrt adv (same shape)
-        data_grad = adv.grad.data
-
-        # FGSM step in denorm (pixel) space
-        adv = adv + step_epsilon * data_grad.sign()
-        adv = torch.clamp(adv, 0.0, 1.0).detach()  # clamp and detach to prepare next iteration
+        # fgsm_attack は内部で正規化→loss/backward→ピクセル空間での加算を行い
+        # clamp して detach を返す設計なので、そのまま上書きする
+        adv = fgsm_attack(adv, step_epsilon, target, model, device).detach()
 
     return adv
 
 def test( model, device, test_loader, epsilon ):
-
     # Accuracy counter
     correct = 0
     adv_examples = []
@@ -222,70 +191,52 @@ def test( model, device, test_loader, epsilon ):
     # Loop over all examples in test set
     for data, target in test_loader:
         target_list.append(target)
-        # print("test loop")
-        # print("data_shape", data.shape)
-        # # 4
-        # print("target_shape", target.shape)
-        # # 1
-        # print("")
-
-
-        # Send the data and label to the device
         data, target = data.to(device), target.to(device)
-
-        # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
 
-        # Forward pass the data through the model
         output = model(data)
         init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
 
-        # If the initial prediction is wrong, don't bother attacking, just move on
         if init_pred.item() != target.item():
             continue
 
-        # Restore the data to its original scale
         data_denorm = denorm(data)
+        perturbed_data = fgsm_attack(data_denorm, epsilon, target, model, device)
 
-        # Call FGSM Attack (内部で loss/backward を実行して摂動を作る)
-        perturbed_data = fgsm_attack(data_denorm, epsilon, target)
-
-        # reattack_steps = 1
-
-        # perturbed_data = iterative_reattack(perturbed_data, model, target, device, step_epsilon=epsilon/reattack_steps  , steps=reattack_steps)
-
-        # Reapply normalization
+        # 最初の FGSM による予測（これが final_pred）
         perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
+        output = model(perturbed_data_normalized)
+        final_pred = output.max(1, keepdim=True)[1]  # shape [B,1]
 
-        # Re-classify the perturbed image
+        # --- ここで final_pred をターゲットとして再攻撃する ---
+        # 例: 1ステップで epsilon を使って再攻撃する場合
+        reattack_steps = 1
+        step_eps = epsilon / reattack_steps if reattack_steps > 0 else 0.0
+
+        # final_pred を適切な形 [B] の long tensor にする
+        final_label = final_pred.view(-1).to(device).long()
+
+        # perturbed_data は非正規化（0..1）を想定しているのでそのまま渡す
+        perturbed_data = iterative_reattack(perturbed_data, model, final_label, device, step_eps, reattack_steps)
+
+        # 再ノーマライズして再分類
+        perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
         output = model(perturbed_data_normalized)
 
-        # Check for success
-        final_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        # Check for success（再攻撃後の予測を使う）
+        final_pred = output.max(1, keepdim=True)[1]
         if final_pred.item() == target.item():
             correct += 1
-            # Special case for saving 0 epsilon examples
             if epsilon == 0 and len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
         else:
-            # Save some adv examples for visualization later
             if len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
-        # print(f"predicted: {final_pred.item()}, expected: {target.item()}")
 
-
-    # Calculate final accuracy for this epsilon
     final_acc = correct/float(len(test_loader))
     print(f"Epsilon: {epsilon}\tTest Accuracy = {correct} / {len(test_loader)} = {final_acc}")
-
-    # for (init_pred, final_pred, adv_ex) in adv_examples:
-
-    #     print(f"Adversarial example: {adv_ex}")
-
-
-    # Return the accuracy and an adversarial example
     return final_acc, adv_examples
 
 
