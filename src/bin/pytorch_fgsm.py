@@ -5,6 +5,8 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+from PIL import Image
 from torch import Tensor
 
 from attacks import fgsm_attack
@@ -13,6 +15,10 @@ epsilons = [0, .05, .1, .15, .2, .25, .3]
 pretrained_model = "data/lenet_mnist_model.pth"
 # Set random seed for reproducibility
 torch.manual_seed(42)
+out_dir = "data/attacked_images"
+
+def create_filename(epsilon: float, index: int) -> str:
+    return f"{out_dir}/eps_{epsilon:.3f}/reattacked_{index}.png"
 
 # LeNet Model definition
 class Net(nn.Module):
@@ -87,44 +93,6 @@ model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_
 # Set the model in evaluation mode. In this case this is for the Dropout layers
 model.eval()
 
-# # FGSM attack code
-# def fgsm_attack(image: Tensor, epsilon: float, target: Tensor) -> Tensor:
-#     """
-#     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
-#     epsilon: ピクセルスケールの摂動量
-#     target: 正解ラベルテンソル (device 上)
-#     戻り値: perturbed_image (非正規化, clamp され detach 済み)
-#     """
-#     # mean/std on device
-#     mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
-#     std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
-
-#     # prepare normalized input as a leaf with requires_grad
-#     image_denorm = image.clone().detach().to(device)
-#     image_norm = (image_denorm - mean) / std
-#     image_norm = image_norm.clone().detach().requires_grad_(True)
-
-#     # forward / loss / backward (local, does not modify external tensors)
-#     output = model(image_norm)
-#     loss = F.nll_loss(output, target)
-#     model.zero_grad()
-#     # backward to get dL/dx_norm
-#     loss.backward()
-#     data_grad_norm = image_norm.grad.data  # gradient w.r.t. normalized input
-
-#     # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
-#     grad_pixel = data_grad_norm / std
-
-#     # FGSM in pixel space
-#     sign_data_grad = grad_pixel.sign()
-#     perturbed = image_denorm + epsilon * sign_data_grad
-#     perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
-
-#     # cleanup grads to avoid side effects
-#     image_norm.grad = None
-
-#     return perturbed
-
 # restores the tensors to their original scale
 def denorm(batch, mean=[0.1307], std=[0.3081]):
     """
@@ -159,6 +127,35 @@ def denorm(batch, mean=[0.1307], std=[0.3081]):
 
     return batch * std.view(1, -1, 1, 1) + mean.view(1, -1, 1, 1)
 
+def save_tensor_as_image(tensor: Tensor, path: str):
+    """
+    tensor: [B,C,H,W] or [C,H,W] or [H,W], values in 0..1 (非正規化)
+    path: output png path
+    """
+    t = tensor.clone().detach().cpu()
+    # squeeze batch/channel dims if needed
+    if t.dim() == 4:
+        t = t[0]
+    if t.dim() == 3 and t.size(0) == 1:
+        arr = t.squeeze(0).numpy()
+    elif t.dim() == 3 and t.size(0) == 3:
+        # convert CHW -> HWC
+        arr = t.permute(1, 2, 0).numpy()
+    elif t.dim() == 2:
+        arr = t.numpy()
+    else:
+        arr = t.numpy()
+
+    # clip and convert to uint8
+    arr = np.clip(arr, 0.0, 1.0)
+    arr_u8 = (arr * 255.0).astype(np.uint8)
+    # create parent dir
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    img = Image.fromarray(arr_u8)
+    img.save(path)
+    info = f"saved image {path}"
+    print(info)
+
 def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tensor, device: str, step_epsilon: float, steps: int) -> Tensor:
     """
     perturbed_denorm: 非正規化されたテンソル (batch, channel, H, W), 値域 [0,1]
@@ -175,8 +172,6 @@ def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tenso
 
     # 繰り返しで再攻撃：各ステップで fgsm_attack を呼ぶ
     for _ in range(steps):
-        # fgsm_attack は内部で正規化→loss/backward→ピクセル空間での加算を行い
-        # clamp して detach を返す設計なので、そのまま上書きする
         adv = fgsm_attack(adv, step_epsilon, target, model, device).detach()
 
     return adv
@@ -189,7 +184,7 @@ def test( model, device, test_loader, epsilon ):
     count = 0
 
     # Loop over all examples in test set
-    for data, target in test_loader:
+    for i, (data, target) in enumerate(test_loader):
         target_list.append(target)
         data, target = data.to(device), target.to(device)
         data.requires_grad = True
@@ -218,6 +213,7 @@ def test( model, device, test_loader, epsilon ):
 
         # perturbed_data は非正規化（0..1）を想定しているのでそのまま渡す
         perturbed_data = iterative_reattack(perturbed_data, model, final_label, device, step_eps, reattack_steps)
+        save_tensor_as_image(perturbed_data, create_filename(epsilon, i))
 
         # 再ノーマライズして再分類
         perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
@@ -248,30 +244,3 @@ for eps in epsilons:
     acc, ex = test(model, device, test_loader, eps)
     accuracies.append(acc)
     examples.append(ex)
-
-# plt.figure(figsize=(5,5))
-# plt.plot(epsilons, accuracies, "*-")
-# plt.yticks(np.arange(0, 1.1, step=0.1))
-# plt.xticks(np.arange(0, .35, step=0.05))
-# plt.title("Accuracy vs Epsilon")
-# plt.xlabel("Epsilon")
-# plt.ylabel("Accuracy")
-# plt.show()
-
-# # Plot several examples of adversarial samples at each epsilon
-# cnt = 0
-# plt.figure(figsize=(8,10))
-# for i in range(len(epsilons)):
-#     for j in range(len(examples[i])):
-#         cnt += 1
-#         plt.subplot(len(epsilons),len(examples[0]),cnt)
-#         plt.xticks([], [])
-#         plt.yticks([], [])
-#         if j == 0:
-#             plt.ylabel(f"Eps: {epsilons[i]}", fontsize=14)
-#         orig,adv,ex = examples[i][j]
-#         plt.title(f"{orig} -> {adv}")
-#         plt.imshow(ex, cmap="gray")
-# plt.tight_layout()
-# plt.show()
-
