@@ -11,11 +11,13 @@ from torch import Tensor
 
 from attacks import fgsm_attack
 
-epsilons = [0, .05, .1, .15, .2, .25, .3]
-pretrained_model = "data/lenet_mnist_model.pth"
 # Set random seed for reproducibility
 torch.manual_seed(42)
 out_dir = "data/attacked_images"
+
+# ---- small utilities ----
+def get_device() -> torch.device:
+    return torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
 def create_filename(epsilon: float, index: int) -> str:
     return f"{out_dir}/eps_{epsilon:.3f}/reattacked_{index}.png"
@@ -71,30 +73,9 @@ class Net(nn.Module):
         output = F.log_softmax(x, dim=1)
         return output
 
-# MNIST Test dataset and dataloader declaration
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-            ])),
-        batch_size=1, shuffle=True)
-
-# We want to be able to train our model on an `accelerator <https://pytorch.org/docs/stable/torch.html#accelerators>`__
-# such as CUDA, MPS, MTIA, or XPU. If the current accelerator is available, we will use it. Otherwise, we use the CPU.
-device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
-print(f"Using {device} device")
-
-# Initialize the network
-model = Net().to(device)
-
-# Load the pretrained model
-model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_only=True))
-
-# Set the model in evaluation mode. In this case this is for the Dropout layers
-model.eval()
 
 # restores the tensors to their original scale
-def denorm(batch, mean=[0.1307], std=[0.3081]):
+def denorm(batch, device, mean=[0.1307], std=[0.3081]):
     """
     Convert a batch of tensors to their original scale.
 
@@ -195,7 +176,7 @@ def test( model, device, test_loader, epsilon ):
         if init_pred.item() != target.item():
             continue
 
-        data_denorm = denorm(data)
+        data_denorm = denorm(data, device)
         perturbed_data = fgsm_attack(data_denorm, epsilon, target, model, device)
 
         # 最初の FGSM による予測（これが final_pred）
@@ -203,24 +184,24 @@ def test( model, device, test_loader, epsilon ):
         output = model(perturbed_data_normalized)
         final_pred = output.max(1, keepdim=True)[1]  # shape [B,1]
 
-        # --- ここで final_pred をターゲットとして再攻撃する ---
-        # 例: 1ステップで epsilon を使って再攻撃する場合
-        reattack_steps = 1
-        step_eps = epsilon / reattack_steps if reattack_steps > 0 else 0.0
+        # # --- ここで final_pred をターゲットとして再攻撃する ---
+        # # 例: 1ステップで epsilon を使って再攻撃する場合
+        # reattack_steps = 1
+        # step_eps = epsilon / reattack_steps if reattack_steps > 0 else 0.0
 
-        # final_pred を適切な形 [B] の long tensor にする
-        final_label = final_pred.view(-1).to(device).long()
+        # # final_pred を適切な形 [B] の long tensor にする
+        # final_label = final_pred.view(-1).to(device).long()
 
-        # perturbed_data は非正規化（0..1）を想定しているのでそのまま渡す
-        perturbed_data = iterative_reattack(perturbed_data, model, final_label, device, step_eps, reattack_steps)
+        # # perturbed_data は非正規化（0..1）を想定しているのでそのまま渡す
+        # perturbed_data = iterative_reattack(perturbed_data, model, final_label, device, step_eps, reattack_steps)
         save_tensor_as_image(perturbed_data, create_filename(epsilon, i))
 
-        # 再ノーマライズして再分類
-        perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
-        output = model(perturbed_data_normalized)
+        # # 再ノーマライズして再分類
+        # perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
+        # output = model(perturbed_data_normalized)
 
         # Check for success（再攻撃後の予測を使う）
-        final_pred = output.max(1, keepdim=True)[1]
+        # final_pred = output.max(1, keepdim=True)[1]
         if final_pred.item() == target.item():
             correct += 1
             if epsilon == 0 and len(adv_examples) < 5:
@@ -236,11 +217,45 @@ def test( model, device, test_loader, epsilon ):
     return final_acc, adv_examples
 
 
-accuracies = []
-examples = []
+def main():
+    epsilons = [0, .05, .1, .15, .2, .25, .3]
+    pretrained_model = "data/lenet_mnist_model.pth"
 
-# Run test for each epsilon
-for eps in epsilons:
-    acc, ex = test(model, device, test_loader, eps)
-    accuracies.append(acc)
-    examples.append(ex)
+    # MNIST Test dataset and dataloader declaration
+    test_loader = torch.utils.data.DataLoader(
+    datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+            ])),
+        batch_size=1, shuffle=True)
+
+    # We want to be able to train our model on an `accelerator <https://pytorch.org/docs/stable/torch.html#accelerators>`__
+    # such as CUDA, MPS, MTIA, or XPU. If the current accelerator is available, we will use it. Otherwise, we use the CPU.
+    device = get_device()
+    print(f"Using {device} device")
+
+    # Initialize the network
+    model = Net().to(device)
+
+    # Load the pretrained model
+    model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_only=True))
+
+    # Set the model in evaluation mode. In this case this is for the Dropout layers
+    model.eval()
+
+
+
+    accuracies = []
+    examples = []
+
+    print("ざぁこざぁこ")
+    # Run test for each epsilon
+    for eps in epsilons:
+        acc, ex = test(model, device, test_loader, eps)
+        accuracies.append(acc)
+        examples.append(ex)
+
+
+# mainとして呼ばれたときのおまじないのあれ
+if __name__ == "__main__":
+    main()
