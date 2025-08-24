@@ -18,7 +18,7 @@ fn main() {
     // train::run::<Autodiff<Metal>>(device);
     let items = burn::data::dataset::vision::MnistDataset::test()
         .iter()
-        .take(50)
+        .take(100)
         .map(|x| x.clone())
         .collect::<Vec<_>>();
     let epsilons = [0., 0.05, 0.1, 0.15, 0.2, 0.25, 0.3];
@@ -32,7 +32,7 @@ fn main() {
 
     for (epsilon, correct, num) in results {
         let final_acc = correct as f64 / num as f64;
-        println!("Epsilon: {epsilon} Test Accuracy:  {correct}/{num} = {final_acc}");
+        println!("Epsilon: {epsilon} \t Test Accuracy:  {correct}/{num} = {final_acc}");
     }
 
     // fgsm::fgsm::<Autodiff<Metal>>(ARTIFACT_DIR, device, &items);

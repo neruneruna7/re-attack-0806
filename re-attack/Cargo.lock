@@ -4046,7 +4046,9 @@ dependencies = [
 name = "re-attack"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "burn",
+ "image",
  "tracing",
  "tracing-subscriber",
 ]

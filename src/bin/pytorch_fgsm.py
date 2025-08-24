@@ -5,6 +5,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
+from torch import Tensor
 
 epsilons = [0, .05, .1, .15, .2, .25, .3]
 pretrained_model = "data/lenet_mnist_model.pth"
@@ -85,7 +86,7 @@ model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_
 model.eval()
 
 # FGSM attack code
-def fgsm_attack(image, epsilon, data_grad):
+def fgsm_attack(image: Tensor, epsilon: float, data_grad: Tensor) -> Tensor:
     # すべて４次元テンソル
     # print("fgsm_attack")
     # print("image_shape", image.shape)
@@ -102,6 +103,24 @@ def fgsm_attack(image, epsilon, data_grad):
     # print("")
     # Return the perturbed image
     return perturbed_image
+
+# def fgsm_reattack(attacked_image: Tensor, epsilon: float, data_grad: Tensor) -> Tensor:
+#     # すべて４次元テンソル
+#     # print("fgsm_reattack")
+#     # print("attacked_image_shape", attacked_image.shape)
+#     # print("data_grad_shape", data_grad.shape)
+#     # Collect the element-wise sign of the data gradient
+#     sign_data_grad = data_grad.sign()
+#     # print("sign_data_grad_shape", sign_data_grad.shape)
+#     # Create the perturbed image by adjusting each pixel of the input image
+#     perturbed_image = attacked_image - epsilon*sign_data_grad
+#     # print("perturbed_image_shape", perturbed_image.shape)
+#     # Adding clipping to maintain [0,1] range
+#     perturbed_image = torch.clamp(perturbed_image, 0, 1)
+#     # print("clamped_perturbed_image_shape", perturbed_image.shape)
+#     # print("")
+#     # Return the perturbed image
+#     return perturbed_image
 
 # restores the tensors to their original scale
 def denorm(batch, mean=[0.1307], std=[0.3081]):
@@ -137,14 +156,52 @@ def denorm(batch, mean=[0.1307], std=[0.3081]):
 
     return batch * std.view(1, -1, 1, 1) + mean.view(1, -1, 1, 1)
 
+def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tensor, device: str, step_epsilon: float, steps: int) -> Tensor:
+    """
+    perturbed_denorm: 非正規化されたテンソル (batch, channel, H, W), 値域 [0,1]
+    step_epsilon: 1ステップあたりの摂動量（ピクセルスケール）
+    steps: 繰り返す回数
+    戻り値: 最終的に得られる非正規化テンソル（clamped, detach済み）
+    """
+    # mean/std tensors on device
+    mean = torch.tensor([0.1307], device=device).view(1, -1, 1, 1)
+    std = torch.tensor([0.3081], device=device).view(1, -1, 1, 1)
+
+    adv = perturbed_denorm.clone().detach()  # start from given perturbed image (非正規化)
+    for _ in range(steps):
+        adv.requires_grad = True
+
+        # normalize for the model
+        adv_normalized = (adv - mean) / std
+
+        # forward / loss / backward to get gradient w.r.t. adv (denorm space through normalization ops)
+        output = model(adv_normalized)
+        loss = F.nll_loss(output, target)
+        model.zero_grad()
+        # ensure previous grads cleared
+        if adv.grad is not None:
+            adv.grad.zero_()
+        loss.backward()
+
+        # data_grad is gradient wrt adv (same shape)
+        data_grad = adv.grad.data
+
+        # FGSM step in denorm (pixel) space
+        adv = adv + step_epsilon * data_grad.sign()
+        adv = torch.clamp(adv, 0.0, 1.0).detach()  # clamp and detach to prepare next iteration
+
+    return adv
+
 def test( model, device, test_loader, epsilon ):
 
     # Accuracy counter
     correct = 0
     adv_examples = []
+    target_list = []
 
     # Loop over all examples in test set
     for data, target in test_loader:
+        target_list.append(target)
         # print("test loop")
         # print("data_shape", data.shape)
         # # 4
@@ -211,8 +268,14 @@ def test( model, device, test_loader, epsilon ):
     final_acc = correct/float(len(test_loader))
     print(f"Epsilon: {epsilon}\tTest Accuracy = {correct} / {len(test_loader)} = {final_acc}")
 
+    for (init_pred, final_pred, adv_ex) in adv_examples:
+
+        print(f"Adversarial example: {adv_ex}")
+
+
     # Return the accuracy and an adversarial example
     return final_acc, adv_examples
+
 
 accuracies = []
 examples = []
