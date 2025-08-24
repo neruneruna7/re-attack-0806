@@ -198,6 +198,7 @@ def test( model, device, test_loader, epsilon ):
     correct = 0
     adv_examples = []
     target_list = []
+    count = 0
 
     # Loop over all examples in test set
     for data, target in test_loader:
@@ -242,6 +243,10 @@ def test( model, device, test_loader, epsilon ):
         # Call FGSM Attack
         perturbed_data = fgsm_attack(data_denorm, epsilon, data_grad)
 
+        # reattack_steps = 1
+
+        # perturbed_data = iterative_reattack(perturbed_data, model, target, device, step_epsilon=epsilon/reattack_steps  , steps=reattack_steps)
+
         # Reapply normalization
         perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
 
@@ -268,9 +273,9 @@ def test( model, device, test_loader, epsilon ):
     final_acc = correct/float(len(test_loader))
     print(f"Epsilon: {epsilon}\tTest Accuracy = {correct} / {len(test_loader)} = {final_acc}")
 
-    for (init_pred, final_pred, adv_ex) in adv_examples:
+    # for (init_pred, final_pred, adv_ex) in adv_examples:
 
-        print(f"Adversarial example: {adv_ex}")
+    #     print(f"Adversarial example: {adv_ex}")
 
 
     # Return the accuracy and an adversarial example
@@ -311,3 +316,4 @@ for eps in epsilons:
 #         plt.imshow(ex, cmap="gray")
 # plt.tight_layout()
 # plt.show()
+
