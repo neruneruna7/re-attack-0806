@@ -12,19 +12,19 @@ from torch import Tensor
 
 from attacks import fgsm_attack
 
-from pytorch_fgsm import Net, create_filename, get_device
+from pytorch_fgsm import Net, create_filename, folder_name, from_filename, get_device
 
 torch.manual_seed(42)
 out_dir = "data/attacked_images"
 
 
-# --- 追加: 保存画像を読み出して再攻撃するユーティリティ ---
-def load_saved_denorm_image(epsilon: float, index: int, device) -> Tensor:
+# --- 追加: 保存画像を読み出す---
+def load_saved_denorm_image(epsilon: float, index: int, device, true_label: int) -> Tensor:
     """
     保存された PNG を読み出して非正規化テンソル [1,1,H,W] (0..1) を返す。
     ファイル名は create_filename を使用。
     """
-    path = create_filename(epsilon, index)
+    path = create_filename(epsilon, index, true_label)
     if not os.path.exists(path):
         raise FileNotFoundError(f"saved image not found: {path}")
     img = Image.open(path).convert("L")  # グレースケール
@@ -32,7 +32,7 @@ def load_saved_denorm_image(epsilon: float, index: int, device) -> Tensor:
     t = to_tensor(img).unsqueeze(0).to(device)  # [1,1,H,W]
     return t
 
-def reattack_saved_image(epsilon_saved: float, index: int, re_eps: float, model: torch.nn.Module, device, steps: int = 1):
+def reattack_saved_image(img_denorm: Tensor, epsilon: float, index: int, re_eps: float, model: torch.nn.Module, device, steps: int = 1):
     """
     保存済みの perturbed (非正規化) を読み出し、モデル上で予測されたラベルをターゲットにして
     fgsm_attack を steps 回繰り返し適用する（各ステップで fgsm_attack を呼ぶ実装）。
@@ -43,8 +43,6 @@ def reattack_saved_image(epsilon_saved: float, index: int, re_eps: float, model:
     - save_out: True なら out_dir 以下に reattacked を保存
     戻り値: (before_pred, after_pred, reattacked_denorm_tensor)
     """
-    # load saved image (非正規化)
-    img_denorm = load_saved_denorm_image(epsilon_saved, index, device)  # [1,1,H,W] on device
 
     # normalize for model input
     mean_t = torch.tensor([0.1307], dtype=img_denorm.dtype, device=img_denorm.device).view(1, -1, 1, 1)
@@ -76,6 +74,7 @@ def reattack_saved_image(epsilon_saved: float, index: int, re_eps: float, model:
 def main():
     epsilons = [0, .05, .1, .15, .2, .25, .3]
     pretrained_model = "data/lenet_mnist_model.pth"
+    image_length = 100
     # Set random seed for reproducibility
 
     # We want to be able to train our model on an `accelerator <https://pytorch.org/docs/stable/torch.html#accelerators>`__
@@ -92,10 +91,38 @@ def main():
     # Set the model in evaluation mode. In this case this is for the Dropout layers
     model.eval()
 
+    for re_eps in epsilons:
+        # 再攻撃もepslonの数だけ試す
+        for eps in epsilons:
+            folder = folder_name(eps)
+            # folder配下にあるすべてのファイルを取得
+            files = os.listdir(folder)
 
-    # 使い方例 (REPL か main の末尾などで):
-    before, after, adv_tensor = reattack_saved_image(0.05, 0, re_eps=0.05, model=model, device=device, steps=1)
-    print("before -> after:", before, "->", after)
+            correct = 0
+            count = 0
+            for (file) in files:
+                # if count > 100:
+                #     break
+                count += 1
+
+                (i, true_label) = from_filename(file)
+                # path = create_filename(eps, i, true_label)
+                img_denorm = load_saved_denorm_image(eps, i, device, true_label)  # [1,1,H,W] on device
+
+                before, after, adv_tensor = reattack_saved_image(img_denorm, eps, i, re_eps, model=model, device=device, steps=1)
+                # print(f"epsilon {eps} index {i}: {before} -> {after}")
+                if true_label == after:
+                    correct += 1
+            acc = correct / count
+            # print(f"Epsilon: {epsilon}\tTest Accuracy = {correct} / {len(test_loader)} = {final_acc}")
+            print(f"attack eps: {eps}  \treattack eps: {re_eps}  \tReattack Accuracy = {correct} / {count} = {acc}")
+
+
+    print("done.")
+
+    # # 使い方例 (REPL か main の末尾などで):
+    # before, after, adv_tensor = reattack_saved_image(0.05, 0, re_eps=0.05, model=model, device=device, steps=1)
+    # print("before -> after:", before, "->", after)
 
 # mainとして呼ばれたときのおまじないのあれ
 if __name__ == "__main__":

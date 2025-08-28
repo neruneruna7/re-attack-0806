@@ -1,3 +1,4 @@
+from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,8 +20,29 @@ out_dir = "data/attacked_images"
 def get_device() -> torch.device:
     return torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 
-def create_filename(epsilon: float, index: int) -> str:
-    return f"{out_dir}/eps_{epsilon:.3f}/reattacked_{index}.png"
+def create_filename(epsilon: float, index: int, true_label: int) -> str:
+    return f"{out_dir}/eps_{epsilon:.3f}/reattacked_{index}_label_{true_label}.png"
+
+def folder_name(epsilon: float) -> str:
+    return f"{out_dir}/eps_{epsilon:.3f}/"
+
+def from_filename(filename: str) -> Tuple[int, int]:
+    """
+    filename: attacked_12_label_3.png
+    戻り値: (12, 3)
+    """
+    parts = filename.split("_")
+    if len(parts) < 4:
+        raise ValueError(f"invalid filename format: {filename}")
+    try:
+        index = int(parts[1])
+        label_part = parts[3]
+        label_str = label_part.split(".")[0]  # "3.png" -> "3"
+        label = int(label_str)
+        return index, label
+    except Exception as e:
+        raise ValueError(f"invalid filename format: {filename}") from e
+
 
 # LeNet Model definition
 class Net(nn.Module):
@@ -194,7 +216,7 @@ def test( model, device, test_loader, epsilon ):
 
         # # perturbed_data は非正規化（0..1）を想定しているのでそのまま渡す
         # perturbed_data = iterative_reattack(perturbed_data, model, final_label, device, step_eps, reattack_steps)
-        save_tensor_as_image(perturbed_data, create_filename(epsilon, i))
+        save_tensor_as_image(perturbed_data, create_filename(epsilon, i, target.item()) )
 
         # # 再ノーマライズして再分類
         # perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
