@@ -82,13 +82,14 @@ fn fgsm_inner<B: AutodiffBackend>(
     // pytorchでな負の対数尤度を使ってた
     // 伴さんのではクロスエントロピーだった
     // クロスエントロピーを使ってみよう
-    let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
-    let loss = loss_fn.forward(output, target);
+    // let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
+    // let loss = loss_fn.forward(output.clone(), target);
 
     // 逆伝播
-    let grad = loss.backward();
+    // let grad = loss.backward();
+    let grad = output.backward();
     let data_grad: Tensor<<B as AutodiffBackend>::InnerBackend, 4> = image.grad(&grad).unwrap();
-    info!("loss: {:?}", loss);
+    // info!("loss: {:?}", loss);
     info!("dy/dx: {:?}", data_grad.clone().into_scalar());
     // // ===== デバッグ出力（ここでまず注目） =====
     // // 勾配の要約（min, max, L1 sum）
@@ -111,15 +112,16 @@ fn fgsm_inner<B: AutodiffBackend>(
     //     sign_abs_sum
     // );
 
-    // 正規化解除
-    let data_denorm = denorm::<B, 1>(image, [MEAN], [STD], &device);
-    // 自動微分バックエンドではなく，通常のバックエンドに変換
-    let data_denorm = data_denorm.inner();
+    // // 正規化解除
+    // let data_denorm = denorm::<B, 1>(image, [MEAN], [STD], &device);
+    // // 自動微分バックエンドではなく，通常のバックエンドに変換
+    // let data_denorm = data_denorm.inner();
 
     // let tmp = data_denorm.clone();
+    todo!()
 
     // fgsm攻撃
-    let perturbed_data = fgsm_attack(data_denorm, epsilon, data_grad);
+    // let perturbed_data = fgsm_attack(data_denorm, epsilon, data_grad);
 
     // let a = Tensor::<B, 4>::from_inner(perturbed_data.clone());
     // let b = Tensor::<B, 4>::from_inner(tmp);
@@ -165,22 +167,22 @@ fn fgsm_inner<B: AutodiffBackend>(
     //     }
     // }
 
-    let perturbed_data_normalized = (perturbed_data - MEAN) / STD;
-    // 自動微分バックエンドに再変換
-    let perturbed_data_normalized = Tensor::from_inner(perturbed_data_normalized);
-    // println!("Attack applied. {perturbed_data_normalized}");
-    // 再分類
-    let output_adv = model.forward(perturbed_data_normalized);
+    // let perturbed_data_normalized = (perturbed_data - MEAN) / STD;
+    // // 自動微分バックエンドに再変換
+    // let perturbed_data_normalized = Tensor::from_inner(perturbed_data_normalized);
+    // // println!("Attack applied. {perturbed_data_normalized}");
+    // // 再分類
+    // let output_adv = model.forward(perturbed_data_normalized);
 
-    // // 最終予測をログ出力（バッチサイズ1を前提）
-    // let final_pred = output_adv
-    //     .clone()
-    //     .argmax(1)
-    //     .flatten::<1>(0, 1)
-    //     .into_scalar();
-    // info!("final_pred: {:?}", final_pred);
+    // // // 最終予測をログ出力（バッチサイズ1を前提）
+    // // let final_pred = output_adv
+    // //     .clone()
+    // //     .argmax(1)
+    // //     .flatten::<1>(0, 1)
+    // //     .into_scalar();
+    // // info!("final_pred: {:?}", final_pred);
 
-    output_adv
+    // output_adv
 }
 
 fn denorm<B: AutodiffBackend, const C: usize>(
