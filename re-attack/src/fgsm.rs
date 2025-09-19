@@ -83,14 +83,15 @@ fn fgsm_inner<B: AutodiffBackend>(
     // 伴さんのではクロスエントロピーだった
     // クロスエントロピーを使ってみよう
     // let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
-    // let loss = loss_fn.forward(output.clone(), target);
+    // let loss = loss_fn.forward(output, target);
 
     // 逆伝播
     // let grad = loss.backward();
     let grad = output.backward();
     let data_grad: Tensor<<B as AutodiffBackend>::InnerBackend, 4> = image.grad(&grad).unwrap();
-    // info!("loss: {:?}", loss);
-    info!("dy/dx: {:?}", data_grad.clone().into_scalar());
+    // info!("loss: {}", &loss);
+    info!("dy/dx: {}", &data_grad);
+
     // // ===== デバッグ出力（ここでまず注目） =====
     // // 勾配の要約（min, max, L1 sum）
     // let grad_min = data_grad.clone().min();
