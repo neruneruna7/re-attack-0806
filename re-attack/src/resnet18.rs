@@ -42,22 +42,16 @@ impl<B: Backend> ResNet18<B> {
         let x = self.activation.forward(x);
         let x = self.maxpool.forward(x);
 
-        // info!("before block layer, shape: {:?}", x.dims());
         let x = self.layer1.forward(x);
-        // info!("after block layer 1, shape: {:?}", x.dims());
         let x = self.layer2.forward(x);
-        // info!("after block layer 2, shape: {:?}", x.dims());
         let x = self.layer3.forward(x);
-        // info!("after block layer 3, shape: {:?}", x.dims());
         let x = self.layer4.forward(x);
-        // info!("after block layer 4, shape: {:?}", x.dims());
 
         let x = self.avgpool.forward(x);
         // let [batch_size, channel, height, width] = x.dims();
         // let x = x.reshape([batch_size, channel * height * width]);
         let x = x.flatten(1, 3);
         let x = self.fc.forward(x);
-        // todo!("debug end");
 
         x
     }

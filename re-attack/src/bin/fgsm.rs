@@ -1,6 +1,6 @@
 use burn::{
     backend::{
-        Autodiff,
+        Autodiff, Wgpu,
         wgpu::{Metal, WgpuDevice},
     },
     data::dataset::Dataset as _,
@@ -9,6 +9,9 @@ use re_attack::{fgsm, infer, train};
 
 use re_attack::ARTIFACT_DIR;
 use tracing::info;
+
+type Backend = Wgpu;
+type AutoDIffBackend = Autodiff<Backend>;
 
 fn main() {
     tracing_subscriber::fmt().init();
@@ -26,7 +29,7 @@ fn main() {
     for &epsilon in &epsilons {
         info!("Epsilon: {epsilon}");
         let (correct, total) =
-            fgsm::fgsm::<Autodiff<Metal>>(ARTIFACT_DIR, device.clone(), epsilon, &items);
+            fgsm::fgsm::<AutoDIffBackend>(ARTIFACT_DIR, device.clone(), epsilon, &items);
         results.push((epsilon, correct, total));
     }
 

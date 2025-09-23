@@ -1,10 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from torchvision import datasets, transforms
-import numpy as np
-import matplotlib.pyplot as plt
 from torch import Tensor
 
 # FGSM attack code
@@ -32,7 +28,10 @@ def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module,
     model.zero_grad()
     # backward to get dL/dx_norm
     loss.backward()
-    data_grad_norm = image_norm.grad.data  # gradient w.r.t. normalized input
+    grad: Tensor | None = image_denorm.grad
+    if grad is None :
+        raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
+    data_grad_norm = grad.data  # gradient w.r.t. normalized input
     print(f"data_grad_norm: {data_grad_norm}")
 
     # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
@@ -76,7 +75,10 @@ def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tens
         model.zero_grad()
         # backward to get dL/dx_norm
         loss.backward()
-        data_grad_norm = image_norm.grad.data  # gradient w.r.t. normalized input
+        grad = image_norm.grad
+        if grad is None :
+            raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
+        data_grad_norm = grad.data  # gradient w.r.t. normalized input
 
         # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
         grad_pixel = data_grad_norm / std

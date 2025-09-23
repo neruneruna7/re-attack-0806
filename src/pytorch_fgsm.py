@@ -10,38 +10,13 @@ import os
 from PIL import Image
 from torch import Tensor
 
-from attacks import fgsm_attack
+from lib import attacks, utils
+
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
 out_dir = "data/attacked_images"
 
-# ---- small utilities ----
-def get_device() -> torch.device:
-    return torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
-
-def create_filename(epsilon: float, index: int, true_label: int) -> str:
-    return f"{out_dir}/eps_{epsilon:.3f}/reattacked_{index}_label_{true_label}.png"
-
-def folder_name(epsilon: float) -> str:
-    return f"{out_dir}/eps_{epsilon:.3f}/"
-
-def from_filename(filename: str) -> Tuple[int, int]:
-    """
-    filename: attacked_12_label_3.png
-    戻り値: (12, 3)
-    """
-    parts = filename.split("_")
-    if len(parts) < 4:
-        raise ValueError(f"invalid filename format: {filename}")
-    try:
-        index = int(parts[1])
-        label_part = parts[3]
-        label_str = label_part.split(".")[0]  # "3.png" -> "3"
-        label = int(label_str)
-        return index, label
-    except Exception as e:
-        raise ValueError(f"invalid filename format: {filename}") from e
 
 
 # LeNet Model definition
@@ -159,7 +134,7 @@ def save_tensor_as_image(tensor: Tensor, path: str):
     info = f"saved image {path}"
     print(info)
 
-def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tensor, device: str, step_epsilon: float, steps: int) -> Tensor:
+def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tensor, device: torch.device, step_epsilon: float, steps: int) -> Tensor:
     """
     perturbed_denorm: 非正規化されたテンソル (batch, channel, H, W), 値域 [0,1]
     step_epsilon: 1ステップあたりの摂動量（ピクセルスケール）
@@ -175,7 +150,7 @@ def iterative_reattack(perturbed_denorm: Tensor, model: nn.Module, target: Tenso
 
     # 繰り返しで再攻撃：各ステップで fgsm_attack を呼ぶ
     for _ in range(steps):
-        adv = fgsm_attack(adv, step_epsilon, target, model, device).detach()
+        adv = attacks.fgsm_attack(adv, step_epsilon, target, model, device).detach()
 
     return adv
 
@@ -199,7 +174,7 @@ def test( model, device, test_loader, epsilon ):
             continue
 
         data_denorm = denorm(data, device)
-        perturbed_data = fgsm_attack(data_denorm, epsilon, target, model, device)
+        perturbed_data = attacks.fgsm_attack(data_denorm, epsilon, target, model, device)
 
         # 最初の FGSM による予測（これが final_pred）
         perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
@@ -216,7 +191,7 @@ def test( model, device, test_loader, epsilon ):
 
         # # perturbed_data は非正規化（0..1）を想定しているのでそのまま渡す
         # perturbed_data = iterative_reattack(perturbed_data, model, final_label, device, step_eps, reattack_steps)
-        save_tensor_as_image(perturbed_data, create_filename(epsilon, i, target.item()) )
+        save_tensor_as_image(perturbed_data, utils.create_filename(out_dir, epsilon, i, target.item()) )
 
         # # 再ノーマライズして再分類
         # perturbed_data_normalized = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
@@ -253,7 +228,7 @@ def main():
 
     # We want to be able to train our model on an `accelerator <https://pytorch.org/docs/stable/torch.html#accelerators>`__
     # such as CUDA, MPS, MTIA, or XPU. If the current accelerator is available, we will use it. Otherwise, we use the CPU.
-    device = get_device()
+    device = utils.get_device()
     print(f"Using {device} device")
 
     # Initialize the network

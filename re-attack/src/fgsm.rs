@@ -79,17 +79,16 @@ fn fgsm_inner<B: AutodiffBackend>(
     let output = model.forward(image.clone());
 
     // 損失計算
-    // pytorchでな負の対数尤度を使ってた
-    // 伴さんのではクロスエントロピーだった
+    // pytorchチュートリアルでな負の対数尤度を使ってた
+    // 先輩のではクロスエントロピーだった
     // クロスエントロピーを使ってみよう
-    // let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
-    // let loss = loss_fn.forward(output, target);
+    let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
+    let loss = loss_fn.forward(output.clone(), target);
+    info!("loss: {}", loss.to_data());
 
     // 逆伝播
-    // let grad = loss.backward();
-    let grad = output.backward();
+    let grad = loss.backward();
     let data_grad: Tensor<<B as AutodiffBackend>::InnerBackend, 4> = image.grad(&grad).unwrap();
-    // info!("loss: {}", &loss);
     info!("dy/dx: {}", &data_grad);
 
     // // ===== デバッグ出力（ここでまず注目） =====

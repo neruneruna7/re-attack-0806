@@ -10,27 +10,14 @@ import os
 from PIL import Image
 from torch import Tensor
 
-from attacks import fgsm_attack
+from lib.attacks import fgsm_attack
 
-from pytorch_fgsm import Net, create_filename, folder_name, from_filename, get_device
+from pytorch_fgsm import Net
+from lib.utils import create_filename, folder_name, from_filename, get_device, load_saved_denorm_image
 
 torch.manual_seed(42)
 out_dir = "data/attacked_images"
 
-
-# --- 追加: 保存画像を読み出す---
-def load_saved_denorm_image(epsilon: float, index: int, device, true_label: int) -> Tensor:
-    """
-    保存された PNG を読み出して非正規化テンソル [1,1,H,W] (0..1) を返す。
-    ファイル名は create_filename を使用。
-    """
-    path = create_filename(epsilon, index, true_label)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"saved image not found: {path}")
-    img = Image.open(path).convert("L")  # グレースケール
-    to_tensor = T.ToTensor()  # returns C,H,W in 0..1
-    t = to_tensor(img).unsqueeze(0).to(device)  # [1,1,H,W]
-    return t
 
 def reattack_saved_image(img_denorm: Tensor, epsilon: float, index: int, re_eps: float, model: torch.nn.Module, device, steps: int = 1):
     """
@@ -94,7 +81,7 @@ def main():
     for re_eps in epsilons:
         # 再攻撃もepslonの数だけ試す
         for eps in epsilons:
-            folder = folder_name(eps)
+            folder = folder_name(out_dir,eps)
             # folder配下にあるすべてのファイルを取得
             files = os.listdir(folder)
 
@@ -107,7 +94,7 @@ def main():
 
                 (i, true_label) = from_filename(file)
                 # path = create_filename(eps, i, true_label)
-                img_denorm = load_saved_denorm_image(eps, i, device, true_label)  # [1,1,H,W] on device
+                img_denorm = load_saved_denorm_image(out_dir,eps, i, device, true_label)  # [1,1,H,W] on device
 
                 before, after, adv_tensor = reattack_saved_image(img_denorm, eps, i, re_eps, model=model, device=device, steps=1)
                 # print(f"epsilon {eps} index {i}: {before} -> {after}")
