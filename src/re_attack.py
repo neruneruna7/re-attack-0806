@@ -12,8 +12,8 @@ from torch import Tensor
 
 from lib.attacks import fgsm_attack
 
-from pytorch_fgsm import Net
 from lib.utils import create_filename, folder_name, from_filename, get_device, load_saved_denorm_image
+from lib import lenet
 
 torch.manual_seed(42)
 out_dir = "data/attacked_images"
@@ -70,7 +70,7 @@ def main():
     print(f"Using {device} device")
 
     # Initialize the network
-    model = Net().to(device)
+    model = lenet.Net().to(device)
 
     # Load the pretrained model
     model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_only=True))

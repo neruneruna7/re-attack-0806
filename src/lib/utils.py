@@ -53,3 +53,16 @@ def load_saved_denorm_image(dir: str, epsilon: float, index: int, device, true_l
     to_tensor = torchvision.transforms.ToTensor()  # returns C,H,W in 0..1
     t = to_tensor(img).unsqueeze(0).to(device)  # [1,1,H,W]
     return t
+
+def load_saved_attacked_images(dir: str, epsilon: float, device: torch.device) -> list[Tuple[int, int, Tensor]]:
+    """
+    指定フォルダから保存された attacked 画像をすべて読み出し、(index, true_label, tensor) のリストを返す。
+    """
+    folder = folder_name(dir, epsilon)
+    files = os.listdir(folder)
+    imgs = []
+    for f in files:
+        (i, true_label) = from_filename(f)
+        img_denorm = load_saved_denorm_image(dir, epsilon, i, device, true_label)
+        imgs.append( (i, true_label, img_denorm) )
+    return imgs

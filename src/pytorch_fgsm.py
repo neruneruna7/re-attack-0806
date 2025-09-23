@@ -10,65 +10,15 @@ import os
 from PIL import Image
 from torch import Tensor
 
-from lib import attacks, utils
+from lib import attacks, utils, lenet
 
+# from lib.models.lenet import Net
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
 out_dir = "data/attacked_images"
 
 
-
-# LeNet Model definition
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.dropout1 = nn.Dropout(0.25)
-        self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(9216, 128)
-        self.fc2 = nn.Linear(128, 10)
-
-    def forward(self, x):
-        # print("forward")
-        # print("1", x.shape)
-        x = self.conv1(x)
-        # print("conv1", x.shape)
-        x = F.relu(x)
-        # print("conv1_relu", x.shape)
-
-        x = self.conv2(x)
-        # print("conv2", x.shape)
-
-        x = F.relu(x)
-        # print("conv2_relu", x.shape)
-
-        x = F.max_pool2d(x, 2)
-        # print("max_pool", x.shape)
-
-        x = self.dropout1(x)
-        # print("dropout1", x.shape)
-
-        x = torch.flatten(x, 1)
-        # print("flatten", x.shape)
-
-        x = self.fc1(x)
-        # print("fc1", x.shape)
-
-        x = F.relu(x)
-        # print("fc1_relu", x.shape)
-
-        x = self.dropout2(x)
-        # print("dropout2", x.shape)
-
-        x = self.fc2(x)
-        # print("fc2", x.shape)
-        # print("")
-
-
-        output = F.log_softmax(x, dim=1)
-        return output
 
 
 # restores the tensors to their original scale
@@ -232,7 +182,7 @@ def main():
     print(f"Using {device} device")
 
     # Initialize the network
-    model = Net().to(device)
+    model = lenet.Net().to(device)
 
     # Load the pretrained model
     model.load_state_dict(torch.load(pretrained_model, map_location=device, weights_only=True))
