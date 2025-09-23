@@ -4,6 +4,7 @@ from typing import Tuple
 import torch
 import torchvision
 from PIL import Image
+import numpy as np
 from torch import Tensor
 from torchvision import transforms
 
@@ -66,3 +67,50 @@ def load_saved_attacked_images(dir: str, epsilon: float, device: torch.device) -
         img_denorm = load_saved_denorm_image(dir, epsilon, i, device, true_label)
         imgs.append( (i, true_label, img_denorm) )
     return imgs
+
+
+def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Module, device: torch.device, mean=[0.1307], std=[0.3081]) -> np.ndarray:
+    """
+    Single responsibility: take a denormalized image tensor [1,1,H,W] in 0..1 on `device`,
+    normalize it, run it through `model` (assumed to be lib.lenet.Net or similar),
+    and return a 1-D numpy array feature vector extracted from the penultimate layer (fc1 output).
+
+    This function does not modify model state and runs in eval() context without gradients.
+    """
+    # ensure model in eval
+    was_training = model.training
+    model.eval()
+
+    # build normalization tensors
+    mean_t = torch.tensor(mean, dtype=img_denorm.dtype, device=device).view(1, -1, 1, 1)
+    std_t = torch.tensor(std, dtype=img_denorm.dtype, device=device).view(1, -1, 1, 1)
+
+    # normalize
+    img_norm = (img_denorm - mean_t) / std_t
+
+    # Forward and capture feature before final fully-connected
+    # For lib.lenet.Net, fc1 is the layer we want (after flatten)
+    # We'll run forward manually up to fc1
+    with torch.no_grad():
+        # call modules via getattr to avoid static-analysis issues
+        conv1 = getattr(model, "conv1")
+        conv2 = getattr(model, "conv2")
+        dropout1 = getattr(model, "dropout1")
+        fc1 = getattr(model, "fc1")
+
+        x = conv1(img_norm)
+        x = torch.nn.functional.relu(x)
+        x = conv2(x)
+        x = torch.nn.functional.relu(x)
+        x = torch.nn.functional.max_pool2d(x, 2)
+        x = dropout1(x)
+        x = torch.flatten(x, 1)
+        feat = fc1(x)
+        feat = torch.nn.functional.relu(feat)
+
+    # restore training state
+    if was_training:
+        model.train()
+
+    # return as numpy 1-D vector
+    return feat.squeeze(0).cpu().numpy()
