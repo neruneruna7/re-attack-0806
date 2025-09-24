@@ -95,3 +95,55 @@ def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tens
     # image_norm.grad = None
 
     return perturbed
+
+import torch
+import torch.nn as nn
+
+def bim_reattack(model: nn.Module, x_adv: Tensor, y_adv: Tensor, device: torch.device, epsilon=0.3, alpha=0.05, num_iter=10, ):
+    """
+    BIMを用いた再攻撃 (Re-attack using BIM)
+
+    Args:
+        model: PyTorchの分類モデル
+        x_adv: 検出された敵対的サンプル (torch.Tensor, shape: [B, C, H, W])
+        y_adv: x_advに対応するラベル (torch.Tensor, shape: [B])
+        epsilon: 最大摂動量 (L∞ノルム制約)
+        alpha: ステップサイズ
+        num_iter: 反復回数
+        device: "cuda" または "cpu"
+
+    Returns:
+        x_adv_prime: 再攻撃後の敵対的サンプル
+    """
+ 
+    # モデルを評価モードに
+    model.eval()
+    loss_fn = nn.CrossEntropyLoss()
+
+    # 入力をコピーして再攻撃用に準備
+    x_adv_prime = x_adv.clone().detach().to(device)
+    y_adv = y_adv.to(device)
+
+    # 元の入力を保存（クリップの基準）
+    x_orig = x_adv.clone().detach().to(device)
+
+    for _ in range(num_iter):
+        x_adv_prime.requires_grad = True
+
+        # 順伝播
+        outputs = model(x_adv_prime)
+        loss = loss_fn(outputs, y_adv)
+
+        # 勾配計算
+        grad = torch.autograd.grad(loss, x_adv_prime,
+                                   retain_graph=False,
+                                   create_graph=False)[0]
+
+        # 勾配の符号方向に摂動を加える
+        x_adv_prime = x_adv_prime.detach() + alpha * grad.sign()
+
+        # 元の入力からε以内にクリップ
+        delta = torch.clamp(x_adv_prime - x_orig, min=-epsilon, max=epsilon)
+        x_adv_prime = torch.clamp(x_orig + delta, 0, 1).detach()
+
+    return x_adv_prime
