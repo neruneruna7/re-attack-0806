@@ -21,7 +21,7 @@ out_dir = "data/attacked_images"
 
 def main():
     epsilons = [0, .05, .1, .15, .2, .25, .3]
-    epsilons = [0.2]
+    epsilons = [0.9]
     pretrained_model = "data/lenet_mnist_model.pth"
 
     # MNIST Test dataset and dataloader declaration

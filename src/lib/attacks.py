@@ -99,7 +99,7 @@ def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tens
 import torch
 import torch.nn as nn
 
-def bim_reattack(model: nn.Module, x_adv: Tensor, y_adv: Tensor, device: torch.device, epsilon=0.3, alpha=0.05, num_iter=10, ):
+def bim_reattack(model: nn.Module, x_adv: Tensor, y_adv: Tensor, device: torch.device, epsilon=0.3, alpha=0.05, num_iter=10, ) -> Tensor:
     """
     BIMを用いた再攻撃 (Re-attack using BIM)
 
@@ -138,6 +138,10 @@ def bim_reattack(model: nn.Module, x_adv: Tensor, y_adv: Tensor, device: torch.d
         grad = torch.autograd.grad(loss, x_adv_prime,
                                    retain_graph=False,
                                    create_graph=False)[0]
+        
+        # print(f"grad: {grad}")
+        # print(f"grad.sign(): {grad.sign()}")
+
 
         # 勾配の符号方向に摂動を加える
         x_adv_prime = x_adv_prime.detach() + alpha * grad.sign()
