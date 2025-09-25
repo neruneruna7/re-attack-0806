@@ -63,11 +63,11 @@ def main():
             # 元画像と再攻撃後の予測を比較
             with torch.no_grad():
                 pred_orig = model(image).argmax(dim=1)
-                pred_adv = model(x_adv_prime).argmax(dim=1)
+                pred_re_adv = model(x_adv_prime).argmax(dim=1)
                 # print(f"元のラベル: {label.item()}")
                 # print(f"元画像の予測: {pred_orig.item()}")
                 # print(f"再攻撃後の予測: {pred_adv.item()}")
-                label_taple.append((label.item(), pred_orig.item(), pred_adv.item()))
+                label_taple.append((label.item(), pred_orig.item(), pred_re_adv.item()))
                 # accuracies.append(acc)
                 # examples.append(ex)
     
@@ -78,10 +78,10 @@ def main():
     correct_count = 0
     total_count = 0
     wrong_pred_count = 0
-    for (true_label, pred_orig, pred_adv) in label_taple:
+    for (true_label, pred_orig, pred_re_adv) in label_taple:
         if true_label == pred_orig:
             total_count += 1
-            if true_label == pred_adv:
+            if true_label == pred_re_adv:
                 correct_count += 1
         else:
             wrong_pred_count += 1

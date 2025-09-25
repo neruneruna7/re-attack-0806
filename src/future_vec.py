@@ -10,6 +10,7 @@ def main():
     from lib.lenet import Net
     device = get_device()
     model = Net().to(device)
+
     # you may want to load pretrained weights if available
 
     # 結果を見やすくするためにソート
