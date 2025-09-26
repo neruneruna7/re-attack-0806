@@ -67,7 +67,7 @@ pub fn fgsm<B: AutodiffBackend>(
 }
 
 fn fgsm_inner<B: AutodiffBackend>(
-    device: &<B as Backend>::Device,
+    device: &<B>::Device,
     model: &crate::resnet18::ResNet18<B>,
     target: Tensor<B, 1, Int>,
     image: Tensor<B, 4>,
@@ -88,7 +88,7 @@ fn fgsm_inner<B: AutodiffBackend>(
 
     // 逆伝播
     let grad = loss.backward();
-    let data_grad: Tensor<<B as AutodiffBackend>::InnerBackend, 4> = image.grad(&grad).unwrap();
+    let data_grad: Tensor<<B>::InnerBackend, 4> = image.grad(&grad).unwrap();
     info!("dy/dx: {}", &data_grad);
 
     // // ===== デバッグ出力（ここでまず注目） =====
