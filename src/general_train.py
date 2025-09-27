@@ -54,22 +54,23 @@ def train_roop(model: nn.Module, loss_fn, optimizer, train_loader, test_loader, 
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
         train(train_loader, model, loss_fn, optimizer, device)
-        # test(test_loader, model, loss_fn, device)
+        test(test_loader, model, loss_fn, device)
     print("Done!")
 
 def main():
     batch_size = 128
+    
     epochs = 99
-    lr=1e-2
+    lr=1e-4
     save_dir = "./weight"
 
     train_loader = torch.utils.data.DataLoader(
-    datasets.CIFAR10('../data', train=True, download=True, transform=transforms.Compose([
+    datasets.MNIST('../data', train=True, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
             ])),
         batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(
-    datasets.CIFAR10('../data', train=False, download=True, transform=transforms.Compose([
+    datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
             ])),
         batch_size=batch_size, shuffle=True)
@@ -79,8 +80,8 @@ def main():
     print(f"Using {device} device")
 
 
-    # model = MorimotoMnist.MnistNet().to(device)
-    model = MorimotoCifar10.Cifar10Net().to(device)
+    model = MorimotoMnist.MnistNet().to(device)
+    # model = MorimotoCifar10.Cifar10Net().to(device)
     print(model)
 
     print(f"Learning rate: {lr}")
@@ -90,7 +91,7 @@ def main():
     # 学習ループを実行
     train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, epochs)
 
-    test(test_loader, model, loss_fn, device)
+    # test(test_loader, model, loss_fn, device)
 
 
     # モデルの保存
