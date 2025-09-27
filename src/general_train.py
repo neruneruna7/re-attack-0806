@@ -16,11 +16,9 @@ from lib import utils
 from lib.models import MorimotoMnist, MorimotoCifar10
 
 
-batch_size = 128
-epochs = 99
-save_dir = "./weight"
 
 def train(data_loader, model: nn.Module, loss_fn, optimizer, device):
+    model.train()
     size = len(data_loader.dataset)
     for batch, (X, y) in enumerate(data_loader):
         X, y = X.to(device), y.to(device)
@@ -56,10 +54,14 @@ def train_roop(model: nn.Module, loss_fn, optimizer, train_loader, test_loader, 
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
         train(train_loader, model, loss_fn, optimizer, device)
-        test(test_loader, model, loss_fn, device)
+        # test(test_loader, model, loss_fn, device)
     print("Done!")
 
 def main():
+    batch_size = 128
+    epochs = 99
+    save_dir = "./weight"
+
     train_loader = torch.utils.data.DataLoader(
     datasets.CIFAR10('../data', train=True, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
@@ -80,12 +82,16 @@ def main():
     model = MorimotoCifar10.Cifar10Net().to(device)
     print(model)
 
-    lr=0.01
+    lr=1e-2
+    print(f"Learning rate: {lr}")
     loss_fn = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # 学習ループを実行
     train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, epochs)
+
+    test(test_loader, model, loss_fn, device)
+
 
     # モデルの保存
     torch.save(model.state_dict(), os.path.join(save_dir, f"{model.model_name}.pth"))
