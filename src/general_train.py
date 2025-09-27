@@ -13,10 +13,11 @@ from torch import Tensor
 import lib
 
 from lib import utils
-from lib.models import MorimoroMnist
+from lib.models import MorimotoMnist, MorimotoCifar10
+
 
 batch_size = 64
-
+epochs = 10
 save_dir = "./weight"
 
 def train(data_loader, model: nn.Module, loss_fn, optimizer, device):
@@ -50,16 +51,24 @@ def test(dataloader, model: nn.Module, loss_fn, device):
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
 
+def train_roop(model: nn.Module, train_loader, test_loader, device, epochs: int = 10, lr: float = 1e-3):
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=lr)
 
+    for t in range(epochs):
+        print(f"Epoch {t+1}\n-------------------------------")
+        train(train_loader, model, loss_fn, optimizer, device)
+        test(test_loader, model, loss_fn, device)
+    print("Done!")
 
 def main():
     train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True, transform=transforms.Compose([
+    datasets.CIFAR10('../data', train=True, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
             ])),
         batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
+    datasets.CIFAR10('../data', train=False, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
             ])),
         batch_size=batch_size, shuffle=True)
@@ -68,9 +77,13 @@ def main():
     
     print(f"Using {device} device")
 
-    model = MorimoroMnist.MnistNet().to(device)
 
+    # model = MorimotoMnist.MnistNet().to(device)
+    model = MorimotoCifar10.Cifar10Net().to(device)
     print(model)
+
+    # 学習ループを実行
+    train_roop(model, train_loader, test_loader, device, epochs=epochs, lr=0.01)
 
     # モデルの保存
     torch.save(model.state_dict(), os.path.join(save_dir, f"{model.model_name}.pth"))
