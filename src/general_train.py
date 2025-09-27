@@ -60,6 +60,7 @@ def train_roop(model: nn.Module, loss_fn, optimizer, train_loader, test_loader, 
 def main():
     batch_size = 128
     epochs = 99
+    lr=1e-2
     save_dir = "./weight"
 
     train_loader = torch.utils.data.DataLoader(
@@ -82,7 +83,6 @@ def main():
     model = MorimotoCifar10.Cifar10Net().to(device)
     print(model)
 
-    lr=1e-2
     print(f"Learning rate: {lr}")
     loss_fn = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
