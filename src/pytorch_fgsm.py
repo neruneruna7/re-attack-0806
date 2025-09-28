@@ -120,6 +120,7 @@ def test( model, device, test_loader, epsilon ):
         output = model(data)
         init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
 
+
         if init_pred.item() != target.item():
             continue
 

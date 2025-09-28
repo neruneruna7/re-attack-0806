@@ -3,6 +3,7 @@ from typing import Tuple
 import torch
 from torch import nn
 import numpy as np
+from torch import Tensor
 # import torch.nn.functional as F
 
 class MnistNet(nn.Module):
@@ -23,7 +24,7 @@ class MnistNet(nn.Module):
         self.dropout2 = nn.Dropout(0.25)
         self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         x = self.conv1(x)
         x = self.act1(x)
         # print("conv1", x.shape)

@@ -23,15 +23,20 @@ def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module,
     image_norm = image_norm.clone().detach().requires_grad_(True)
     
     # forward / loss / backward (local, does not modify external tensors)
-    output = model(image_norm)
-    loss = F.nll_loss(output, target)
     model.zero_grad()
+    output = model(image_norm)
+    output = F.log_softmax(output, dim=1)
+
+    # loss = F.cross_entropy(output, target)
+    loss = F.nll_loss(output, target)
+
     # backward to get dL/dx_norm
     loss.backward()
+
     grad: Tensor | None = image_denorm.grad
     if grad is None :
         raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
-    data_grad_norm = grad.data  # gradient w.r.t. normalized input
+    data_grad_norm = grad.detach()  # gradient w.r.t. normalized input
     print(f"data_grad_norm: {data_grad_norm}")
 
     # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
@@ -46,6 +51,12 @@ def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module,
     image_norm.grad = None
 
     return perturbed
+
+def fgsm_attack(image, epsilon, data_grad):
+    sign_data_grad = data_grad.sign()
+    perturbed_image = image + epsilon*sign_data_grad
+    perturbed_image = torch.clamp(perturbed_image, 0, 1)
+    return perturbed_image
 
 def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
     """
