@@ -7,6 +7,12 @@ from PIL import Image
 import numpy as np
 from torch import Tensor
 from torchvision import transforms
+from typing import  Tuple
+import torch
+import numpy as np
+import os
+from PIL import Image
+from torch import Tensor
 
 
 
@@ -114,3 +120,67 @@ def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Modul
 
     # return as numpy 1-D vector
     return feat.squeeze(0).cpu().numpy()
+
+
+# restores the tensors to their original scale
+def denorm(batch, device, mean=[0.1307], std=[0.3081]) -> Tensor:
+    """
+    Convert a batch of tensors to their original scale.
+
+    Args:
+        batch (torch.Tensor): Batch of normalized tensors.
+        mean (torch.Tensor or list): Mean used for normalization.
+        std (torch.Tensor or list): Standard deviation used for normalization.
+
+    Returns:
+        torch.Tensor: batch of tensors without normalization applied to them.
+    """
+    if isinstance(mean, list):
+        mean_t: Tensor = torch.tensor(mean).to(device)
+    if isinstance(std, list):
+        std_t: Tensor = torch.tensor(std).to(device)
+
+    # print("batch_shape", batch.shape) 
+    # #バッチは４次元
+
+    # print("mean_shape", mean.shape)
+    # # 1次元
+    # print(mean.view(1, -1, 1, 1).shape)
+    # # 4次元
+
+    # print("std_shape", std.shape)
+    # # 1次元
+    # print(std.view(1, -1, 1, 1).shape)
+    # # 4次元
+    # print("")
+
+    return batch * std_t.view(1, -1, 1, 1) + mean_t.view(1, -1, 1, 1)
+
+def save_tensor_as_image(tensor: Tensor, path: str):
+    """
+    tensor: [B,C,H,W] or [C,H,W] or [H,W], values in 0..1 (非正規化)
+    path: output png path
+    """
+    t = tensor.clone().detach().cpu()
+    # squeeze batch/channel dims if needed
+    if t.dim() == 4:
+        t = t[0]
+    if t.dim() == 3 and t.size(0) == 1:
+        arr = t.squeeze(0).numpy()
+    elif t.dim() == 3 and t.size(0) == 3:
+        # convert CHW -> HWC
+        arr = t.permute(1, 2, 0).numpy()
+    elif t.dim() == 2:
+        arr = t.numpy()
+    else:
+        arr = t.numpy()
+
+    # clip and convert to uint8
+    arr = np.clip(arr, 0.0, 1.0)
+    arr_u8 = (arr * 255.0).astype(np.uint8)
+    # create parent dir
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    img = Image.fromarray(arr_u8)
+    img.save(path)
+    info = f"saved image {path}"
+    print(info)
