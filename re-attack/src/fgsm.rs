@@ -73,23 +73,35 @@ fn fgsm_inner<B: AutodiffBackend>(
     image: Tensor<B, 4>,
     epsilon: f32,
 ) -> Tensor<B, 2> {
-    let image = image.require_grad();
+    let data = image.require_grad();
 
     // println!("Original image: {image}");
-    let output = model.forward(image.clone());
+    let clean_output = model.forward(data.clone());
+    let clean_pred = clean_output
+        .clone()
+        .argmax(1)
+        .flatten::<1>(0, 1)
+        .into_scalar();
 
     // 損失計算
     // pytorchチュートリアルでな負の対数尤度を使ってた
     // 先輩のではクロスエントロピーだった
     // クロスエントロピーを使ってみよう
     let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
-    let loss = loss_fn.forward(output.clone(), target);
+    let loss = loss_fn.forward(clean_output.clone(), target);
     info!("loss: {}", loss.to_data());
+
+    // burnでpytorchのzero_grad()に相当する操作は？
 
     // 逆伝播
     let grad = loss.backward();
-    let data_grad: Tensor<<B>::InnerBackend, 4> = image.grad(&grad).unwrap();
+    let data_grad = data.grad(&grad).unwrap();
+    let data_denorm = denorm::<B, 1>(data.clone(), [MEAN], [STD], device);
     info!("dy/dx: {}", &data_grad);
+
+    let data_grad = Tensor::<B, 4>::from_inner(data_grad.clone());
+
+    let perturbed_data = fgsm_attack(data_denorm, epsilon, data_grad);
 
     // // ===== デバッグ出力（ここでまず注目） =====
     // // 勾配の要約（min, max, L1 sum）

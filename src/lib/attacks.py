@@ -4,53 +4,53 @@ import torch.nn.functional as F
 from torch import Tensor
 
 # FGSM attack code
-def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
-    """
-    image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
-    epsilon: ピクセルスケールの摂動量
-    target: 正解ラベルテンソル (device 上)
-    戻り値: perturbed_image (非正規化, clamp され detach 済み)
-    """
+# def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
+#     """
+#     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
+#     epsilon: ピクセルスケールの摂動量
+#     target: 正解ラベルテンソル (device 上)
+#     戻り値: perturbed_image (非正規化, clamp され detach 済み)
+#     """
     
 
-    # mean/std on device
-    mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
-    std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
+#     # mean/std on device
+#     mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
+#     std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
 
-    # prepare normalized input as a leaf with requires_grad
-    image_denorm = image.clone().detach().to(device)
-    image_norm = (image_denorm - mean) / std
-    image_norm = image_norm.clone().detach().requires_grad_(True)
+#     # prepare normalized input as a leaf with requires_grad
+#     image_denorm = image.clone().detach().to(device)
+#     image_norm = (image_denorm - mean) / std
+#     image_norm = image_norm.clone().detach().requires_grad_(True)
     
-    # forward / loss / backward (local, does not modify external tensors)
-    model.zero_grad()
-    output = model(image_norm)
-    output = F.log_softmax(output, dim=1)
+#     # forward / loss / backward (local, does not modify external tensors)
+#     model.zero_grad()
+#     output = model(image_norm)
+#     output = F.log_softmax(output, dim=1)
 
-    # loss = F.cross_entropy(output, target)
-    loss = F.nll_loss(output, target)
+#     # loss = F.cross_entropy(output, target)
+#     loss = F.nll_loss(output, target)
 
-    # backward to get dL/dx_norm
-    loss.backward()
+#     # backward to get dL/dx_norm
+#     loss.backward()
 
-    grad: Tensor | None = image_denorm.grad
-    if grad is None :
-        raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
-    data_grad_norm = grad.detach()  # gradient w.r.t. normalized input
-    print(f"data_grad_norm: {data_grad_norm}")
+#     grad: Tensor | None = image_denorm.grad
+#     if grad is None :
+#         raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
+#     data_grad_norm = grad.detach()  # gradient w.r.t. normalized input
+#     print(f"data_grad_norm: {data_grad_norm}")
 
-    # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
-    grad_pixel = data_grad_norm / std
+#     # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
+#     grad_pixel = data_grad_norm / std
 
-    # FGSM in pixel space
-    sign_data_grad = grad_pixel.sign()
-    perturbed = image_denorm + epsilon * sign_data_grad
-    perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
+#     # FGSM in pixel space
+#     sign_data_grad = grad_pixel.sign()
+#     perturbed = image_denorm + epsilon * sign_data_grad
+#     perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
 
-    # cleanup grads to avoid side effects
-    image_norm.grad = None
+#     # cleanup grads to avoid side effects
+#     image_norm.grad = None
 
-    return perturbed
+#     return perturbed
 
 def fgsm_attack(image, epsilon, data_grad):
     sign_data_grad = data_grad.sign()
@@ -58,54 +58,92 @@ def fgsm_attack(image, epsilon, data_grad):
     perturbed_image = torch.clamp(perturbed_image, 0, 1)
     return perturbed_image
 
-def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
+def mean_perturbation(original: Tensor, perturbed: Tensor) -> int | float | bool:
+    perturbation = torch.abs(perturbed - original)
+    mean_perturb = torch.mean(perturbation).item()
+    return mean_perturb
+
+def bim_attack(image, epsilon, alpha, n: int, data_grad, model: nn.Module, device: torch.device) -> Tensor:
     """
     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
     epsilon: 摂動量
     alpha: ステップサイズ
     n: 反復回数
-    target: 正解ラベルテンソル (device 上)
+    data_grad: 勾配テンソル
     戻り値: perturbed_image (非正規化, clamp され detach 済み)
     """
-    # mean/std on device
-    mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
-    std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
 
-    # prepare normalized input as a leaf with requires_grad
-    image_denorm = image.clone().detach().to(device)
+    # loss = F.cross_entropy(clean_output, target)
+    # model.zero_grad()
+    # loss.backward()
 
-    perturbed = image_denorm.clone().detach()
+    # grad = data.grad
+    # if grad is None:
+    #     raise ValueError("grad is None")
+    # data_grad = grad.data
+
+    # data_denorm = denorm(data_grad, device)
+
+    perturbed = image.clone().detach()
 
     for _ in range(n):
-        image_norm = (image_denorm - mean) / std
-        image_norm = image_norm.clone().detach().requires_grad_(True)
-
-        # forward / loss / backward (local, does not modify external tensors)
-        output = model(image_norm)
-        loss = F.nll_loss(output, target)
-        model.zero_grad()
-        # backward to get dL/dx_norm
-        loss.backward()
-        grad = image_norm.grad
-        if grad is None :
-            raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
-        data_grad_norm = grad.data  # gradient w.r.t. normalized input
-
-        # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
-        grad_pixel = data_grad_norm / std
-
-        # FGSM in pixel space
-        sign_data_grad = grad_pixel.sign()
+        sign_data_grad = data_grad.sign()
         perturbed = perturbed + alpha * sign_data_grad
 
         # 元画像からの接道を epsilon 以内にクリップ
-        delta = torch.clamp(perturbed - image_denorm, min=-epsilon, max=epsilon)
-        perturbed = torch.clamp(image_denorm + delta, 0.0, 1.0).detach()
-
-    # cleanup grads to avoid side effects
-    # image_norm.grad = None
+        delta = torch.clamp(perturbed - image, min=-epsilon, max=epsilon)
+        perturbed = torch.clamp(image + delta, 0.0, 1.0).detach()
 
     return perturbed
+
+# def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
+#     """
+#     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
+#     epsilon: 摂動量
+#     alpha: ステップサイズ
+#     n: 反復回数
+#     target: 正解ラベルテンソル (device 上)
+#     戻り値: perturbed_image (非正規化, clamp され detach 済み)
+#     """
+#     # mean/std on device
+#     mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
+#     std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
+
+#     # prepare normalized input as a leaf with requires_grad
+#     image_denorm = image.clone().detach().to(device)
+
+#     perturbed = image_denorm.clone().detach()
+
+#     for _ in range(n):
+#         image_norm = (image_denorm - mean) / std
+#         image_norm = image_norm.clone().detach().requires_grad_(True)
+
+#         # forward / loss / backward (local, does not modify external tensors)
+#         output = model(image_norm)
+#         loss = F.nll_loss(output, target)
+#         model.zero_grad()
+#         # backward to get dL/dx_norm
+#         loss.backward()
+#         grad = image_norm.grad
+#         if grad is None :
+#             raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
+#         data_grad_norm = grad.data  # gradient w.r.t. normalized input
+
+#         # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
+#         grad_pixel = data_grad_norm / std
+
+#         # FGSM in pixel space
+#         sign_data_grad = grad_pixel.sign()
+#         perturbed = perturbed + alpha * sign_data_grad
+
+#         # 元画像からの接道を epsilon 以内にクリップ
+#         delta = torch.clamp(perturbed - image_denorm, min=-epsilon, max=epsilon)
+#         perturbed = torch.clamp(image_denorm + delta, 0.0, 1.0).detach()
+
+#     # cleanup grads to avoid side effects
+#     # image_norm.grad = None
+
+#     return perturbed
 
 import torch
 import torch.nn as nn

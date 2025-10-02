@@ -15,71 +15,11 @@ import lib
 from lib.models import MorimotoMnist, MorimotoCifar10
 from lib import attacks, utils
 
-# restores the tensors to their original scale
-def denorm(batch, device, mean=[0.1307], std=[0.3081]) -> Tensor:
-    """
-    Convert a batch of tensors to their original scale.
-
-    Args:
-        batch (torch.Tensor): Batch of normalized tensors.
-        mean (torch.Tensor or list): Mean used for normalization.
-        std (torch.Tensor or list): Standard deviation used for normalization.
-
-    Returns:
-        torch.Tensor: batch of tensors without normalization applied to them.
-    """
-    if isinstance(mean, list):
-        mean = torch.tensor(mean).to(device)
-    if isinstance(std, list):
-        std = torch.tensor(std).to(device)
-
-    # print("batch_shape", batch.shape) 
-    # #バッチは４次元
-
-    # print("mean_shape", mean.shape)
-    # # 1次元
-    # print(mean.view(1, -1, 1, 1).shape)
-    # # 4次元
-
-    # print("std_shape", std.shape)
-    # # 1次元
-    # print(std.view(1, -1, 1, 1).shape)
-    # # 4次元
-    # print("")
-
-    return batch * std.view(1, -1, 1, 1) + mean.view(1, -1, 1, 1)
-
-def save_tensor_as_image(tensor: Tensor, path: str):
-    """
-    tensor: [B,C,H,W] or [C,H,W] or [H,W], values in 0..1 (非正規化)
-    path: output png path
-    """
-    t = tensor.clone().detach().cpu()
-    # squeeze batch/channel dims if needed
-    if t.dim() == 4:
-        t = t[0]
-    if t.dim() == 3 and t.size(0) == 1:
-        arr = t.squeeze(0).numpy()
-    elif t.dim() == 3 and t.size(0) == 3:
-        # convert CHW -> HWC
-        arr = t.permute(1, 2, 0).numpy()
-    elif t.dim() == 2:
-        arr = t.numpy()
-    else:
-        arr = t.numpy()
-
-    # clip and convert to uint8
-    arr = np.clip(arr, 0.0, 1.0)
-    arr_u8 = (arr * 255.0).astype(np.uint8)
-    # create parent dir
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    img = Image.fromarray(arr_u8)
-    img.save(path)
-    info = f"saved image {path}"
-    print(info)
 
 def main():
-    epsilon = 0.9
+    epsilon = 0.3
+    alpha = 0.05
+    n = 10
     model_save_dir = "./weight"
 
     image_save_dir = "data/attacked_images"
@@ -104,8 +44,11 @@ def main():
 
     print("RUN")
     adv_examples = []
+    count = 0
     for i, (data, target) in enumerate(test_loader):
-        # if i >= 100:  # 最初の100個のテストデータに対して攻撃を行う
+        # if i >= 10:  # 最初の100個のテストデータに対して攻撃を行う
+        #     break
+        # if count >= 1000:  # 正しく分類されたものを10個見つけたら終了
         #     break
         data: Tensor  = data.to(device) 
         target: Tensor = target.to(device)
@@ -113,6 +56,7 @@ def main():
         
         clean_output: Tensor = model(data)
         clean_pred = clean_output.max(1, keepdim=True)[1] # get the index of the max log-probability
+
 
         loss = F.cross_entropy(clean_output, target)
         model.zero_grad()
@@ -123,18 +67,26 @@ def main():
             raise ValueError("grad is None")
         data_grad = grad.data
 
-        data_denorm = denorm(data_grad, device)
+        data_denorm = utils.denorm(data_grad, device)
 
-        perturbed_data = attacks.fgsm_attack(data_denorm, epsilon, data_grad)
+        # perturbed_data = attacks.fgsm_attack(data_denorm, epsilon, data_grad)
+        perturbed_data = attacks.bim_attack(data_denorm, epsilon, alpha, n, data_grad, model, device)
 
-        # 最初の FGSM による予測（これが final_pred）
+        # 最初の AE による予測（これが final_pred）
         perturbed_data_normalized: Tensor = transforms.Normalize((0.1307,), (0.3081,))(perturbed_data)
         perturbed_output: Tensor = model(perturbed_data_normalized)
 
         perturbed_pred = perturbed_output.max(1, keepdim=True)[1]  # shape [B,1]
 
+        # 平均摂動量を計算して表示
+        mean_perturb = attacks.mean_perturbation(data, perturbed_data)
+
         adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
-        adv_examples.append( (clean_pred.item(), perturbed_pred.item(), target.item(), adv_ex) )
+        adv_examples.append( (clean_pred.item(), perturbed_pred.item(), target.item(), adv_ex, mean_perturb) )
+
+        if clean_pred.item() == target.item():
+            count += 1
+
 
     # final_acc = correct/float(len(test_loader))
     # print(f"Epsilon: {epsilon}\tTest Accuracy = {correct} / {len(test_loader)} = {final_acc}")
@@ -143,18 +95,25 @@ def main():
     # fgsm前のデータで正しく分類されていたもののうち、fgsm後に誤分類されたものの割合
     fail = 0
     total = 0
-    for clean, adv, target, ex in adv_examples:
+    mean_mean_perturb = 0
+    for clean, adv, target, ex, mean_perturb in adv_examples:
+        # print(f"clean: {clean}, adv: {adv}, target: {target},\n mean_perturb: {mean_perturb}")
+
         if clean != target:
             continue
         total += 1
+        mean_mean_perturb += mean_perturb
         if adv != target:
             fail += 1
+    
+    mean_perturb = mean_mean_perturb / total if total > 0 else 0.0
 
     if total == 0:
         attack_acc = 0.0
     else:
         attack_acc = fail / total
     print(f"Epsilon: {epsilon}\tAttack Success Rate = {attack_acc} = {fail} / {total}")
+    print(f"Mean Perturbation = {mean_perturb}")
 
     return attack_acc, adv_examples
 
