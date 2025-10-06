@@ -66,10 +66,10 @@ def train_roop(model: nn.Module, loss_fn, optimizer, train_loader, test_loader, 
 def main():
     save_dir = "./weight"
 
-    # mnist_train_param = TrainParam(epochs=99, batch_size=128, lr=10-4, save_weight_dir=save_dir)
+    # mnist_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-4, save_weight_dir=save_dir)
     # general_train_param = mnist_train_param
 
-    cifar10_train_param = TrainParam(epochs=99, batch_size=128, lr=10-2, save_weight_dir=save_dir)
+    cifar10_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-2, save_weight_dir=save_dir)
     general_train_param = cifar10_train_param
 
     # train_loader = torch.utils.data.DataLoader(
