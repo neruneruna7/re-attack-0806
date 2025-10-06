@@ -10,8 +10,18 @@ class PloofNet(nn.Module):
         super(PloofNet, self).__init__()
         self.model_name = "ploof"
 
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+
     def forward(self, x: Tensor) -> Tensor:
-        x = x % 2
+        print("input", x.shape)
+        x = torch.sin(x)
+        x = x + x
+        x = x * x
+        x = torch.tanh(x)
+        x = self.global_pool(x)
+        x = torch.flatten(x, 1)
+
+        # 最終出力をクラス数と合わせる必要がある？
 
         return x
 
