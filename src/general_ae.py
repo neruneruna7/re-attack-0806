@@ -26,14 +26,26 @@ def main():
 
     device = utils.get_device()
 
-    test_loader = torch.utils.data.DataLoader(
+    test_loader_MNIST = torch.utils.data.DataLoader(
     datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
+            # transforms.Normalize((0.1307,), (0.3081,)),
             ])),
         batch_size=1, shuffle=True)
     
+    test_loader_cifar10 = torch.utils.data.DataLoader(
+    datasets.CIFAR10('../data', train=False, download=True, transform=transforms.Compose([
+            transforms.ToTensor(),
+            # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])),
+        batch_size=1, shuffle=True)
+    
+    test_loader = test_loader_MNIST
+    # test_loader = test_loader_cifar10
+
     model = MorimotoMnist.MnistNet().to(device)
+    # model = MorimotoCifar10.Cifar10Net().to(device)
+
 
     # Load the pretrained model
     model_path = os.path.join(model_save_dir, f'{model.model_name}.pth')
