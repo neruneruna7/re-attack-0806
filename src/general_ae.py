@@ -14,6 +14,7 @@ from torch import Tensor
 from enum import Enum
 import argparse
 import lib
+from copy import deepcopy
 
 from lib.models import MorimotoMnist, MorimotoCifar10
 from lib import attacks, utils
@@ -33,6 +34,31 @@ class AttackKind(str, Enum):
     BIM = "bim"
     FGSM = "fgsm"
 
+class PresetKind(str, Enum):
+    MORIMOTO_BIM = "morimoto_bim"      
+    # TRAMER_CIFAR = "tramer_cifar"    # Tramer-style CIFAR params (example)
+    DEFAULT = "default"
+
+# Preset mapping: each preset sets fields on Config (uses enum values where appropriate)
+PRESETS = {
+    PresetKind.DEFAULT: {
+        # no-op
+    },
+    PresetKind.MORIMOTO_BIM: {
+        "epsilon": 0.3,
+        "alpha": 0.05,
+        "n": 10,
+        "batch_size": 1,
+    },
+    # PresetKind.TRAMER_CIFAR: {
+    #     "epsilon": 8.0/255.0,
+    #     "alpha": 2.0/255.0,
+    #     "iters": 10,
+    #     "batch_size": 16,
+    # },
+}
+
+
 @dataclass
 class Config:
     dataset: DatasetKind = DatasetKind.MNIST
@@ -42,8 +68,18 @@ class Config:
     epsilon: float = 0.3
     alpha: float = 0.05
     iters: int = 10
+    n: int = 10
     batch_size: int = 1
     device: Optional[torch.device] = None
+
+def apply_preset(cfg: Config, paper: PresetKind) -> Config:
+    """Return new Config with preset fields applied (shallow copy)."""
+    preset = PRESETS.get(paper, {})
+    new_cfg = deepcopy(cfg)
+    for k, v in preset.items():
+        if hasattr(new_cfg, k):
+            setattr(new_cfg, k, v)
+    return new_cfg
 
 class ModelFactory:
     @staticmethod
@@ -134,7 +170,7 @@ class Runner:
 
             # attack
             if self.cfg.attack == AttackKind.BIM:
-                perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.iters,
+                perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
                                                data_grad, self.model, self.device)
             else:
                 # FGSM expects (image_denorm, epsilon, target, model, device)
@@ -153,31 +189,14 @@ class Runner:
             mean_perturb = attacks.mean_perturbation(data, perturbed)
             adv_examples.append((i, pred.item(), pred2.item(), perturbed.squeeze().detach().cpu(), mean_perturb))
         return adv_examples
-
-        # # compute stats: only consider samples that were initially correct
-        # fail = 0
-        # total = 0
-        # mean_mean_perturb = 0.0
-        # for idx, before, after, ex, m in adv_examples:
-        #     # need original true label; we can reload dataset sample if necessary,
-        #     # but here assume before was model's initial pred and compare with that
-        #     total += 1
-        #     mean_mean_perturb += m
-        #     if after != before:
-        #         fail += 1
-
-        # attack_acc = (fail / total) if total > 0 else 0.0
-        # mean_perturb = (mean_mean_perturb / total) if total > 0 else 0.0
-        # print(f"Epsilon: {self.cfg.epsilon}\tAttack Success Rate = {attack_acc} = {fail} / {total}")
-        # print(f"Mean Perturbation = {mean_perturb}")
-        # return attack_acc, adv_examples
-
     
 def parse_args() -> Config:
     parser = argparse.ArgumentParser(description="general AE attack runner")
     parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
     parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MNIST.value)
     parser.add_argument("--attack", choices=[a.value for a in AttackKind], default=AttackKind.BIM.value)
+    parser.add_argument("--preset", choices=[p.value for p in PresetKind], default=None,
+                        help="apply preset parameters for a reference paper")
     parser.add_argument("--model-dir", default="./weight")
     parser.add_argument("--epsilon", type=float, default=0.3)
     parser.add_argument("--alpha", type=float, default=0.05)
@@ -195,6 +214,9 @@ def parse_args() -> Config:
         batch_size=args.batch_size,
         device=utils.get_device()
     )
+
+    if args.preset:
+        cfg = apply_preset(cfg, PresetKind(args.preset))
     return cfg
 
 def main():
