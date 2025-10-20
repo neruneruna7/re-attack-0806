@@ -26,8 +26,9 @@ class DatasetKind(str, Enum):
 
 
 class ModelKind(str, Enum):
-    MNIST = "mnist"
-    CIFAR10 = "cifar10"
+    MORIMOTO_MNIST = "mnist"
+    MORIMOTO_CIFAR10 = "cifar10"
+    INCEPTION_V3 = "inception_v3"
 
 
 class AttackKind(str, Enum):
@@ -35,7 +36,7 @@ class AttackKind(str, Enum):
     FGSM = "fgsm"
 
 class PresetKind(str, Enum):
-    MORIMOTO_BIM = "morimoto_bim"      
+    MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"      
     # TRAMER_CIFAR = "tramer_cifar"    # Tramer-style CIFAR params (example)
     DEFAULT = "default"
 
@@ -44,7 +45,10 @@ PRESETS = {
     PresetKind.DEFAULT: {
         # no-op
     },
-    PresetKind.MORIMOTO_BIM: {
+    PresetKind.MORIMOTO_MNIST_BIM: {
+        "dataset": DatasetKind.MNIST,
+        "model": ModelKind.MORIMOTO_MNIST,
+        "attack": AttackKind.BIM,
         "epsilon": 0.3,
         "alpha": 0.05,
         "n": 10,
@@ -62,7 +66,7 @@ PRESETS = {
 @dataclass
 class Config:
     dataset: DatasetKind = DatasetKind.MNIST
-    model: ModelKind = ModelKind.MNIST
+    model: ModelKind = ModelKind.MORIMOTO_MNIST
     attack: AttackKind = AttackKind.BIM
     model_dir: str = "./weight"
     epsilon: float = 0.3
@@ -84,10 +88,14 @@ def apply_preset(cfg: Config, paper: PresetKind) -> Config:
 class ModelFactory:
     @staticmethod
     def create(kind: ModelKind, device: torch.device) -> nn.Module:
-        if kind == ModelKind.MNIST:
+        if kind == ModelKind.MORIMOTO_MNIST:
             return MorimotoMnist.MnistNet().to(device)
-        if kind == ModelKind.CIFAR10:
+        if kind == ModelKind.MORIMOTO_CIFAR10:
             return MorimotoCifar10.Cifar10Net().to(device)
+        if kind == ModelKind.INCEPTION_V3:
+            from torchvision.models import inception_v3
+            model = inception_v3(pretrained=False, aux_logits=False)
+            return model.to(device)
         raise ValueError(f"unsupported model kind: {kind}")
 
 
@@ -194,7 +202,7 @@ class Runner:
 def parse_args() -> Config:
     parser = argparse.ArgumentParser(description="general AE attack runner")
     parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
-    parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MNIST.value)
+    parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_MNIST.value)
     parser.add_argument("--attack", choices=[a.value for a in AttackKind], default=AttackKind.BIM.value)
     parser.add_argument("--preset", choices=[p.value for p in PresetKind], default=None,
                         help="apply preset parameters for a reference paper")
