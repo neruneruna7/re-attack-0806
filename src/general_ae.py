@@ -16,9 +16,10 @@ import argparse
 import lib
 from copy import deepcopy
 
-from lib.models import MorimotoMnist, MorimotoCifar10
+from lib.models import MorimotoMnist, MorimotoCifar10, Ploof
 from lib import attacks, utils
 
+import foolbox
 
 class DatasetKind(str, Enum):
     MNIST = "mnist"
@@ -29,6 +30,7 @@ class ModelKind(str, Enum):
     MORIMOTO_MNIST = "mnist"
     MORIMOTO_CIFAR10 = "cifar10"
     INCEPTION_V3 = "inception_v3"
+    PLOOF = "ploof"
 
 
 class AttackKind(str, Enum):
@@ -36,8 +38,8 @@ class AttackKind(str, Enum):
     FGSM = "fgsm"
 
 class PresetKind(str, Enum):
-    MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"      
-    # TRAMER_CIFAR = "tramer_cifar"    # Tramer-style CIFAR params (example)
+    MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
+    SAMPLE_PLOOF = "sample_ploof"
     DEFAULT = "default"
 
 # Preset mapping: each preset sets fields on Config (uses enum values where appropriate)
@@ -54,12 +56,11 @@ PRESETS = {
         "n": 10,
         "batch_size": 1,
     },
-    # PresetKind.TRAMER_CIFAR: {
-    #     "epsilon": 8.0/255.0,
-    #     "alpha": 2.0/255.0,
-    #     "iters": 10,
-    #     "batch_size": 16,
-    # },
+    PresetKind.SAMPLE_PLOOF: {
+        "dataset": DatasetKind.MNIST,
+        "model": ModelKind.PLOOF,
+        "attack": AttackKind.FGSM,
+    },
 }
 
 
@@ -92,6 +93,10 @@ class ModelFactory:
             return MorimotoMnist.MnistNet().to(device)
         if kind == ModelKind.MORIMOTO_CIFAR10:
             return MorimotoCifar10.Cifar10Net().to(device)
+        if kind == ModelKind.PLOOF:
+            # MNIST前提になってしまってる．このファクトリーの仕組みも問題がある．
+            # 改善が必要
+            return Ploof.PloofNet(10).to(device)
         if kind == ModelKind.INCEPTION_V3:
             from torchvision.models import inception_v3
             model = inception_v3(pretrained=False, aux_logits=False)
@@ -178,9 +183,21 @@ class Runner:
             data_denorm = utils.denorm(data_grad, self.device)
 
             # attack
+            import foolbox
+
             if self.cfg.attack == AttackKind.BIM:
-                perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                                               data_grad, self.model, self.device)
+                # perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
+                                            #    data_grad, self.model, self.device)
+                # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
+                preprocessing = dict(mean=[0.1307], std=[0.3081])
+                bounds = (-float("inf"), float("inf"))
+                fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing,  device=self.device)
+                attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha)
+                raw, clipped, is_adv = attack(fmodel, data_denorm, target,  epsilons=0.03)
+                # print("row data:", raw)
+                # print("clipped:", clipped)
+                # print(is_adv)
+                perturbed = clipped
             else:
                 # FGSM expects (image_denorm, epsilon, target, model, device)
                 perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)

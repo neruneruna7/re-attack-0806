@@ -12,7 +12,10 @@ from PIL import Image
 from torch import Tensor
 import lib
 
-from lib.models import MorimotoMnist, MorimotoCifar10
+import foolbox
+
+
+from lib.models import MorimotoMnist, MorimotoCifar10, Ploof
 from lib import attacks, utils
 
 
@@ -35,11 +38,13 @@ def main():
 
     model = MorimotoMnist.MnistNet().to(device)
     # model = MorimotoCifar10.Cifar10Net().to(device)
+    # model = Ploof.PloofNet(10).to(device)
 
+    fmodel = foolbox.PyTorchModel(model)
 
-    # Load the pretrained model
-    model_path = os.path.join(model_save_dir, f'{model.model_name}.pth')
-    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    # # Load the pretrained model
+    # model_path = os.path.join(model_save_dir, f'{model.model_name}.pth')
+    # model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
 
         # Set the model in evaluation mode. In this case this is for the Dropout layers
     model.eval()
@@ -52,18 +57,18 @@ def main():
             break
 
         for i in range(n):
-            data: Tensor  = data.to(device) 
-            target: Tensor = target.to(device)
-            data.requires_grad = True
+            data_i: Tensor  = data.to(device) 
+            target_i: Tensor = target.to(device)
+            data_i.requires_grad = True
             
-            clean_output: Tensor = model(data)
+            clean_output: Tensor = model(data_i)
 
 
-            loss = F.cross_entropy(clean_output, target)
+            loss = F.cross_entropy(clean_output, target_i)
             model.zero_grad()
             loss.backward()
 
-            grad = data.grad
+            grad = data_i.grad
             if grad is None:
                 raise ValueError("grad is None")
             data_grad = grad.data

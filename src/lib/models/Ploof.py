@@ -12,7 +12,7 @@ class PloofNet(nn.Module):
         self.output_features = output_features
 
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(64, self.output_features)  # 出力を10クラスに合わせる
+        self.fc = nn.Linear(1, self.output_features)  # 出力を10クラスに合わせる
 
     def forward(self, x: Tensor) -> Tensor:
         print("input", x.shape)
@@ -24,6 +24,6 @@ class PloofNet(nn.Module):
         x = torch.flatten(x, 1)
 
         # 最終出力をクラス数と合わせる必要がある？
-
+        x = self.fc(x)
         return x
 
