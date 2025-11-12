@@ -28,47 +28,25 @@ Pythonのパッケージマネージャにはuvを使用している．
 Kiri MCPはSerenaより高度な検索機能を提供します。セマンティック検索、フレーズ認識、依存関係分析などを活用してください。
 
 **1-1. コンテキスト自動取得（推奨）**
-```
-mcp__kiri__context_bundle
-goal: 'adversarial attack, re-attack, PyTorch, FGSM, BIM'
-limit: 10
-compact: true
-```
 - タスクに関連するコードスニペットを自動でランク付けして取得
 - `goal`には具体的なキーワードを使用（抽象的な動詞は避ける）
 - `compact: true`でトークン消費を95%削減
 
 **1-2. 具体的なキーワード検索**
-```
-mcp__kiri__files_search
-query: 'fgsm grad'
-lang: 'python'
-path_prefix: 'src/'
-```
 - 関数名、クラス名、エラーメッセージなど具体的な識別子で検索
 - 広範な調査には`context_bundle`を使用
 
 **1-3. 依存関係の調査**
-```
-mcp__kiri__deps_closure
-path: 'src/auth/login.ts'
-direction: 'inbound'
-max_depth: 3
-```
 - 影響範囲分析（inbound）や依存チェーン（outbound）を取得
 - リファクタリング時の影響調査に最適
 
 **1-4. コードの詳細取得**
-```
-mcp__kiri__snippets_get
-path: 'src/auth/login.ts'
-```
 - ファイルパスがわかっている場合に使用
 - シンボル境界を認識して適切なセクションを抽出
 
 #### 2. ライブラリドキュメントの確認
 - Context7 MCPを使用して最新のライブラリドキュメントを取得
-- Next.js, React, その他使用するライブラリの最新情報を確認
+- Pytorch, torchvision, その他使用するライブラリの最新情報を確認
 - `mcp__context7__resolve-library-id` → `mcp__context7__get-library-docs` の順で実行
 
 #### 3. Web検索による補完調査（mcp-gemini-cliのGoogle Search Toolを使用）
@@ -82,7 +60,7 @@ path: 'src/auth/login.ts'
 - Kiriで取得したコンテキストを基に実装方針を決定
 
 **完了チェックリスト:**
-- [ ] Kiri MCPで関連コードを特定
+- [ ] Serena MCPで関連コードを特定
 - [ ] 必要なライブラリのドキュメントを確認
 - [ ] 既存パターンと依存関係を把握
 
