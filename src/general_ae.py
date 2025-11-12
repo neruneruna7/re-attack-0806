@@ -24,24 +24,6 @@ from lib import attacks____
 
 import foolbox
 
-class DatasetKind(str, Enum):
-    MNIST = "mnist"
-    CIFAR10 = "cifar10"
-    IMAGE_NET = "imagenet"
-    INCEPTION_V3 = "inception_v3"
-
-
-class ModelKind(str, Enum):
-    MORIMOTO_MNIST = "mnist"
-    MORIMOTO_CIFAR10 = "cifar10"
-    INCEPTION_V3 = "inception_v3"
-    PLOOF = "ploof"
-
-
-class AttackKind(str, Enum):
-    BIM = "bim"
-    FGSM = "fgsm"
-    FOOLBOX_BIM = "foolbox_bim"
 
 class PresetKind(str, Enum):
     MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
@@ -101,72 +83,6 @@ def apply_preset(cfg: Config, paper: PresetKind) -> Config:
         if hasattr(new_cfg, k):
             setattr(new_cfg, k, v)
     return new_cfg
-
-class ModelFactory:
-    @staticmethod
-    def create(kind: ModelKind, device: torch.device) -> nn.Module:
-        if kind == ModelKind.MORIMOTO_MNIST:
-            return MorimotoMnist.MnistNet().to(device)
-        if kind == ModelKind.MORIMOTO_CIFAR10:
-            return MorimotoCifar10.Cifar10Net().to(device)
-        if kind == ModelKind.PLOOF:
-            # MNIST前提になってしまってる．このファクトリーの仕組みも問題がある．
-            # 改善が必要
-            return Ploof.PloofNet(10).to(device)
-        if kind == ModelKind.INCEPTION_V3:
-            from torchvision.models import inception_v3
-            model = inception_v3(pretrained=False, aux_logits=False)
-            return model.to(device)
-        raise ValueError(f"unsupported model kind: {kind}")
-
-
-class DataFactory:
-    @staticmethod
-    def loader(kind: DatasetKind, batch_size: int):
-        if kind == DatasetKind.MNIST:
-            transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
-            ])
-            ds = datasets.MNIST('../data', train=False, download=True, transform=transform)
-        elif kind == DatasetKind.CIFAR10:
-            transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465),
-                                     (0.247, 0.243, 0.261))
-            ])
-            ds = datasets.CIFAR10('../data', train=False, download=True, transform=transform)
-        elif kind == DatasetKind.IMAGE_NET:
-            transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize((0.485, 0.456, 0.406),
-                                     (0.229, 0.224, 0.225))
-            ])
-            # torchvision.datasets.ImageNet は devkit（ILSVRC2012_devkit_t12.tar.gz）や
-            # 画像アーカイブが所定の場所にないと RuntimeError を投げることがある。
-            # その場合はローカルに展開済みの val ディレクトリを ImageFolder で読み込むフォールバックを行う。
-            try:
-                ds = datasets.ImageNet('../data/image_net', split='val', transform=transform)
-            except RuntimeError as e:
-                # 典型的なエラーメッセージ例:
-                # "The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted."
-                print(f"datasets.ImageNet failed: {e}")
-                alt_dir = '../data/image_net/ILSVRC2012_img_val'
-                if os.path.exists(alt_dir) and os.path.isdir(alt_dir):
-                    print(f"Falling back to ImageFolder at {alt_dir}")
-                    ds = datasets.ImageFolder(alt_dir, transform=transform)
-                else:
-                    raise RuntimeError(
-                        "ImageNet dataset not found or devkit missing.\n"
-                        "Please download the ILSVRC2012 data and devkit and place them under ../data/image_net,\n"
-                        "or prepare a validation folder at ../data/image_net/ILSVRC2012_img_val and retry.\n"
-                        "See README or ImageNet official site for instructions to obtain ILSVRC2012 archives."
-                    )
-
-        else:
-            raise ValueError(f"unsupported dataset kind: {kind}")
-        return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True)
 
 
 class Runner:

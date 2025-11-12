@@ -1,4 +1,4 @@
-# ---- small utilities ----
+# ---- small utilities (package) ----
 import os
 from typing import Tuple
 import torch
@@ -7,28 +7,26 @@ from PIL import Image
 import numpy as np
 from torch import Tensor
 from torchvision import transforms
-from typing import  Tuple
-import torch
-import numpy as np
-import os
-from PIL import Image
-from torch import Tensor
-
 
 
 def get_device() -> torch.device:
     accelerator = torch.device("cpu")
-    if torch.accelerator.is_available() :
+    if torch.accelerator.is_available():
         accelerator = torch.accelerator.current_accelerator()
-    if accelerator is None :
+    if accelerator is None:
         return torch.device("cpu")
     return accelerator
+
+
+
 
 def create_filename(out_dir: str, epsilon: float, index: int, true_label: int) -> str:
     return f"{out_dir}/eps_{epsilon:.3f}/reattacked_{index}_label_{true_label}.png"
 
+
 def folder_name(out_dir: str, epsilon: float) -> str:
     return f"{out_dir}/eps_{epsilon:.3f}/"
+
 
 def from_filename(filename: str) -> Tuple[int, int]:
     """
@@ -47,6 +45,7 @@ def from_filename(filename: str) -> Tuple[int, int]:
     except Exception as e:
         raise ValueError(f"invalid filename format: {filename}") from e
 
+
 # --- 追加: 保存画像を読み出す---
 def load_saved_denorm_image(dir: str, epsilon: float, index: int, device, true_label: int) -> Tensor:
     """
@@ -61,6 +60,7 @@ def load_saved_denorm_image(dir: str, epsilon: float, index: int, device, true_l
     t = to_tensor(img).unsqueeze(0).to(device)  # [1,1,H,W]
     return t
 
+
 def load_saved_attacked_images(dir: str, epsilon: float, device: torch.device) -> list[Tuple[int, int, Tensor]]:
     """
     指定フォルダから保存された attacked 画像をすべて読み出し、(index, true_label, tensor) のリストを返す。
@@ -71,7 +71,7 @@ def load_saved_attacked_images(dir: str, epsilon: float, device: torch.device) -
     for f in files:
         (i, true_label) = from_filename(f)
         img_denorm = load_saved_denorm_image(dir, epsilon, i, device, true_label)
-        imgs.append( (i, true_label, img_denorm) )
+        imgs.append((i, true_label, img_denorm))
     return imgs
 
 
@@ -97,7 +97,7 @@ def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Modul
     # 順伝播して、最終全結合層の直前の特徴を取得する
     # lib.lenet.Net では fc1 が目的の層（flatten の後）なので、fc1 まで手動で順伝播を実行する
     with torch.no_grad():
-    # 静的解析上の問題を避けるため getattr 経由でモジュールを呼び出す
+        # 静的解析上の問題を避けるため getattr 経由でモジュールを呼び出す
         conv1 = getattr(model, "conv1")
         conv2 = getattr(model, "conv2")
         dropout1 = getattr(model, "dropout1")
@@ -121,7 +121,7 @@ def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Modul
     return feat.squeeze(0).cpu().numpy()
 
 
-# テンソルを元のスケールに戻す
+# テンソルを元のスケールに戻す（既存の util と互換の関数）
 def denorm(batch, device, mean=[0.1307], std=[0.3081]) -> Tensor:
     """
     Convert a batch of tensors to their original scale.
@@ -139,21 +139,8 @@ def denorm(batch, device, mean=[0.1307], std=[0.3081]) -> Tensor:
     if isinstance(std, list):
         std_t: Tensor = torch.tensor(std).to(device)
 
-    # print("batch_shape", batch.shape) 
-    # #バッチは４次元
-
-    # print("mean_shape", mean.shape)
-    # # 1次元
-    # print(mean.view(1, -1, 1, 1).shape)
-    # # 4次元
-
-    # print("std_shape", std.shape)
-    # # 1次元
-    # print(std.view(1, -1, 1, 1).shape)
-    # # 4次元
-    # print("")
-
     return batch * std_t.view(1, -1, 1, 1) + mean_t.view(1, -1, 1, 1)
+
 
 def save_tensor_as_image(tensor: Tensor, path: str):
     """
@@ -167,7 +154,7 @@ def save_tensor_as_image(tensor: Tensor, path: str):
     if t.dim() == 3 and t.size(0) == 1:
         arr = t.squeeze(0).numpy()
     elif t.dim() == 3 and t.size(0) == 3:
-    # CHW を HWC に変換
+        # CHW を HWC に変換
         arr = t.permute(1, 2, 0).numpy()
     elif t.dim() == 2:
         arr = t.numpy()
