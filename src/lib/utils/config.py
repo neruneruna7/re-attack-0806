@@ -46,27 +46,22 @@ class DatasetNorm:
     引数 dataset_kind は `DatasetKind`（またはその value 文字列）を受け取る。
     内部で mean/std を決定し、テンソルの正規化/非正規化を行う。
     """
-    def __init__(self, dataset_kind: object, device: torch.device, dtype: torch.dtype = torch.float32) -> None:
+    def __init__(self, dataset_kind: DatasetKind, device: torch.device, dtype: torch.dtype = torch.float32) -> None:
         # dataset_kind が Enum の場合は value を使う（循環 import を避けるため、柔軟に受け入れる）
-        kind = getattr(dataset_kind, 'value', dataset_kind)
-        # Enum や文字列どちらでも受け取るため、文字列化して小文字化する
-        kind = str(kind).lower()
         self.device = device
         self.dtype = dtype
 
-        if kind in ('mnist', 'mnist'.upper()):
+        if dataset_kind == DatasetKind.MNIST:
             mean = [0.1307]
             std = [0.3081]
-        elif kind in ('cifar10', 'cifar10'.upper(), 'cifar'):
+        elif dataset_kind == DatasetKind.CIFAR10:
             mean = [0.4914, 0.4822, 0.4465]
             std = [0.2470, 0.2435, 0.2616]
-        elif kind in ('imagenet', 'image_net', 'image-net'):
+        elif dataset_kind == DatasetKind.IMAGE_NET:
             mean = [0.485, 0.456, 0.406]
             std = [0.229, 0.224, 0.225]
         else:
-            # デフォルトは CIFAR 風（3 チャンネル）
-            mean = [0.4914, 0.4822, 0.4465]
-            std = [0.2470, 0.2435, 0.2616]
+            raise ValueError(f"unsupported dataset kind: {dataset_kind}")
 
         self.mean = torch.tensor(mean, device=self.device, dtype=self.dtype).view(1, -1, 1, 1)
         self.std = torch.tensor(std, device=self.device, dtype=self.dtype).view(1, -1, 1, 1)
