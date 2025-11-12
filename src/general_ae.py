@@ -41,6 +41,7 @@ class ModelKind(str, Enum):
 class AttackKind(str, Enum):
     BIM = "bim"
     FGSM = "fgsm"
+    FOOLBOX_BIM = "foolbox_bim"
 
 class PresetKind(str, Enum):
     MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
@@ -209,10 +210,29 @@ class Runner:
             import foolbox
 
             if self.cfg.attack == AttackKind.BIM:
-                # Use bim_attack from lib.attacks: signature (image, epsilon, alpha, num_iter, target, model, device)
-                # perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                #                                target, self.model, self.device)
+                # Use bim_attack from lib.attacks package (internal implementation)
                 perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
+                                           target, self.model, self.device)
+            elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
+                # Use Foolbox implementation of Linf Basic Iterative Attack
+                # Prepare preprocessing depending on channel count
+                if data.dim() == 4 and data.size(1) == 1:
+                    preprocessing = dict(mean=[0.1307], std=[0.3081], axis=-3)
+                else:
+                    preprocessing = dict(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261], axis=-3)
+                bounds = (0.0, 1.0)
+                try:
+                    # pylanceの警告を抑制する． # type: ignore[reportPrivateImportUsage] を使う．
+                    fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+                    attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
+                    # ここまでpylanceの警告を抑制する．
+                    raw, clipped, is_adv = attack(fmodel, data_denorm, target, epsilons=self.cfg.epsilon)
+                    # clipped may be a single tensor or a list/array depending on foolbox version
+                    perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+                except Exception as e:
+                    print(f"Foolbox BIM attack failed: {e}")
+                    # fallback to internal BIM
+                    perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
                                                target, self.model, self.device)
                 # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
                 # preprocessing = dict(mean=[0.1307], std=[0.3081])
