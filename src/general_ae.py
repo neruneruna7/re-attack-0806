@@ -18,6 +18,9 @@ from copy import deepcopy
 
 from lib.models import MorimotoMnist, MorimotoCifar10, Ploof
 from lib import attacks, utils
+from lib.attacks import bim, fgsm
+from lib import attacks____
+# use attacks package under lib (implements fgsm and bim)
 
 import foolbox
 
@@ -206,8 +209,11 @@ class Runner:
             import foolbox
 
             if self.cfg.attack == AttackKind.BIM:
-                perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                                               data_grad, self.model, self.device)
+                # Use bim_attack from lib.attacks: signature (image, epsilon, alpha, num_iter, target, model, device)
+                # perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
+                #                                target, self.model, self.device)
+                perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
+                                               target, self.model, self.device)
                 # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
                 # preprocessing = dict(mean=[0.1307], std=[0.3081])
                 # bounds = (-float("inf"), float("inf"))
@@ -220,8 +226,11 @@ class Runner:
                 # perturbed = clipped
             else:
                 # FGSM expects (image_denorm, epsilon, target, model, device)
-                perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
+                # perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
                  # normalize perturbed for model inference
+                perturbed = fgsm.fgsm_attack(
+                    data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
+                )
             if data.dim() == 4 and data.size(1) == 1:
                 perturbed_norm = transforms.Normalize((0.1307,), (0.3081,))(perturbed)
             else:
@@ -232,7 +241,7 @@ class Runner:
             logits2 = self._to_logits(out2)
             pred2 = logits2.max(1, keepdim=True)[1]
 
-            mean_perturb = attacks.mean_perturbation(data, perturbed)
+            mean_perturb = attacks____.mean_perturbation(data, perturbed)
             adv_examples.append((i, pred.item(), pred2.item(), perturbed.squeeze().detach().cpu(), mean_perturb))
         return adv_examples
     
