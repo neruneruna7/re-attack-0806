@@ -143,7 +143,27 @@ class DataFactory:
                 transforms.Normalize((0.485, 0.456, 0.406),
                                      (0.229, 0.224, 0.225))
             ])
-            ds = datasets.ImageNet('../data/image_net', split='val', transform=transform)
+            # torchvision.datasets.ImageNet は devkit（ILSVRC2012_devkit_t12.tar.gz）や
+            # 画像アーカイブが所定の場所にないと RuntimeError を投げることがある。
+            # その場合はローカルに展開済みの val ディレクトリを ImageFolder で読み込むフォールバックを行う。
+            try:
+                ds = datasets.ImageNet('../data/image_net', split='val', transform=transform)
+            except RuntimeError as e:
+                # 典型的なエラーメッセージ例:
+                # "The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted."
+                print(f"datasets.ImageNet failed: {e}")
+                alt_dir = '../data/image_net/ILSVRC2012_img_val'
+                if os.path.exists(alt_dir) and os.path.isdir(alt_dir):
+                    print(f"Falling back to ImageFolder at {alt_dir}")
+                    ds = datasets.ImageFolder(alt_dir, transform=transform)
+                else:
+                    raise RuntimeError(
+                        "ImageNet dataset not found or devkit missing.\n"
+                        "Please download the ILSVRC2012 data and devkit and place them under ../data/image_net,\n"
+                        "or prepare a validation folder at ../data/image_net/ILSVRC2012_img_val and retry.\n"
+                        "See README or ImageNet official site for instructions to obtain ILSVRC2012 archives."
+                    )
+
         else:
             raise ValueError(f"unsupported dataset kind: {kind}")
         return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True)
