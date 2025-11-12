@@ -9,4 +9,5 @@ wheels/
 # Virtual environments
 .venv
 
+/data
 /datatest_general_reattack.py
