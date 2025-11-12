@@ -18,38 +18,32 @@ def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -
         std = torch.tensor([0.2470, 0.2435, 0.2616], device=device, dtype=dtype).view(1, -1, 1, 1)
     return mean, std
 
-def bim_attack_norm(input_norm: Tensor,
-                    eps_norm: float | Tensor,
-                    alpha_norm: float | Tensor,
-                    num_iter: int,
-                    target: Tensor,
-                    eval_model: nn.Module,
-                    device: torch.device) -> Tensor:
-    """Basic Iterative Method operating in *normalized* space.
+def bim(input_norm: Tensor,
+        target: Tensor,
+        eval_model: nn.Module,
+        device: torch.device,
+        eps_norm: float | Tensor,
+        alpha_norm: float | Tensor,
+        num_iter: int,
+        *,
+        orig_norm: Optional[Tensor] = None) -> Tensor:
+    """汎用 BIM 実装（正規化空間）。
 
-    この関数は正規化済みテンソルを受け取り、正規化済みテンソルを返します。
-    - 入力 / 出力: 正規化されたテンソル (通常は transforms.Normalize 後のテンソル)。
-    - eps_norm / alpha_norm: 正規化空間での L-inf 制約とステップ幅（ピクセル空間ではなく正規化空間の値）。
-    - eval_model: 評価モードであるべきモデル（関数はモデルの状態を変更しません。呼び出し側で eval() を保証してください）。
+    - input_norm: 攻撃開始点（正規化済みテンソル）。
+    - orig_norm: クリップの基準（None の場合は input_norm を基準とする＝新規攻撃）。
+    - target: ラベルテンソル（スカラーや [B] を受け付ける）。
+    - eval_model: eval() 済みのモデル（関数内部で状態を変更しない）。
 
-    Args:
-        input_norm: 正規化済み入力テンソル [B,C,H,W]
-        eps_norm: 正規化空間での最大摂動量 (L-inf)
-        alpha_norm: 正規化空間でのステップサイズ
-        num_iter: 反復回数
-        target: ラベルテンソル (shape [B] または scalar)
-        eval_model: 評価モードであることが前提の nn.Module
-        device: 実行デバイス
-
-    Returns:
-        perturbed_norm: 正規化済みの摂動後テンソル（detach, clamp済み）
+    これにより attack / reattack の両方の用途を同じ実装で扱える。
     """
-    # 入力は既に正規化済みであることを想定する
     input_norm = input_norm.clone().detach().to(device)
     perturbed_norm = input_norm.clone().detach()
-    orig_norm = input_norm.clone().detach()
+    if orig_norm is None:
+        orig_norm = input_norm.clone().detach()
+    else:
+        orig_norm = orig_norm.clone().detach().to(device)
 
-    # ターゲットを正しいデバイスとデータ型に移す
+    # ターゲット整形
     if target is not None:
         target = target.to(device)
         if target.dim() == 0:
@@ -58,63 +52,28 @@ def bim_attack_norm(input_norm: Tensor,
 
     loss_fn = nn.CrossEntropyLoss()
 
-    for _ in range(num_iter):
-        # 勾配計算用に正規化された入力を用意
-        perturbed_norm_req = perturbed_norm.clone().detach().requires_grad_(True)
+    # eps_norm / alpha_norm をテンソル化してブロードキャスト可能にする
+    if not isinstance(eps_norm, Tensor):
+        eps_norm = torch.tensor(eps_norm, device=perturbed_norm.device, dtype=perturbed_norm.dtype)
+    if not isinstance(alpha_norm, Tensor):
+        alpha_norm = torch.tensor(alpha_norm, device=perturbed_norm.device, dtype=perturbed_norm.dtype)
 
-        outputs = eval_model(perturbed_norm_req)
+    for _ in range(num_iter):
+        req = perturbed_norm.clone().detach().requires_grad_(True)
+        outputs = eval_model(req)
         loss = loss_fn(outputs, target)
 
-        # 入力に対する勾配のみを取得して副作用を避ける
-        grad_norm = torch.autograd.grad(loss, perturbed_norm_req, retain_graph=False, create_graph=False)[0]
+        grad_norm = torch.autograd.grad(loss, req, retain_graph=False, create_graph=False)[0]
         if grad_norm is None:
-            raise RuntimeError("bim_attack_norm: gradient is None")
+            raise RuntimeError("bim: gradient is None")
 
-        # 正規化空間で更新を行う
         perturbed_norm = perturbed_norm.detach() + alpha_norm * grad_norm.sign()
 
-        # orig_norm からの距離を eps_norm に射影して clamp
-        delta = torch.clamp(perturbed_norm - orig_norm, min=-eps_norm, max=eps_norm)
-        perturbed_norm = torch.clamp(orig_norm + delta, -float('inf'), float('inf')).detach()
-
+        # delta を elementwise に clamp する（eps_norm はテンソルでもスカラーでも対応）
+        delta = perturbed_norm - orig_norm
+        delta = torch.max(torch.min(delta, eps_norm), -eps_norm)
+        perturbed_norm = (orig_norm + delta).detach()
     return perturbed_norm
-
-
-def bim_reattack_norm(eval_model: nn.Module,
-                      x_adv_norm: Tensor,
-                      y_adv: Tensor,
-                      device: torch.device,
-                      eps_norm: float | Tensor = 0.3,
-                      alpha_norm: float | Tensor = 0.05,
-                      num_iter: int = 10) -> Tensor:
-    """再攻撃ユーティリティ（正規化空間版）。
-
-    - 入力/出力は正規化済みテンソル（eval_model は eval() が呼ばれていることを呼び出し側で保証してください）。
-    - x_adv_norm を基準(orig) としてその周りに再攻撃を行い、正規化空間のテンソルを返します。
-    """
-    # 関数はモデルの状態を変更しない前提（eval_model は eval() が呼ばれていること）
-    x_adv_prime = x_adv_norm.clone().detach().to(device)
-    y_adv = y_adv.to(device)
-    orig_norm = x_adv_norm.clone().detach().to(device)
-
-    loss_fn = nn.CrossEntropyLoss()
-
-    for _ in range(num_iter):
-        x_adv_req = x_adv_prime.clone().detach().requires_grad_(True)
-
-        outputs = eval_model(x_adv_req)
-        loss = loss_fn(outputs, y_adv)
-
-        grad_norm = torch.autograd.grad(loss, x_adv_req, retain_graph=False, create_graph=False)[0]
-        if grad_norm is None:
-            raise RuntimeError("bim_reattack_norm: gradient is None")
-
-        x_adv_prime = x_adv_prime.detach() + alpha_norm * grad_norm.sign()
-
-        delta = torch.clamp(x_adv_prime - orig_norm, min=-eps_norm, max=eps_norm)
-        x_adv_prime = torch.clamp(orig_norm + delta, -float('inf'), float('inf')).detach()
-
-    return x_adv_prime
 
 
 def _to_norm_params(epsilon: float, alpha: float, std_t: Tensor) -> tuple[Tensor, Tensor]:
@@ -156,7 +115,7 @@ def bim_attack(image: Tensor,
 
     eps_norm, alpha_norm = _to_norm_params(epsilon, alpha, std_t)
 
-    perturbed_norm = bim_attack_norm(input_norm, eps_norm, alpha_norm, num_iter, target, model, device)
+    perturbed_norm = bim(input_norm, target, model, device, eps_norm, alpha_norm, num_iter)
 
     # convert back to denorm (pixel space)
     perturbed = perturbed_norm * std_t + mean_t
@@ -184,7 +143,7 @@ def bim_reattack(model: nn.Module, x_adv: Tensor, y_adv: Tensor, device: torch.d
 
     eps_norm, alpha_norm = _to_norm_params(epsilon, alpha, std_t)
 
-    perturbed_norm = bim_reattack_norm(model, x_adv_norm, y_adv, device, eps_norm, alpha_norm, num_iter)
+    perturbed_norm = bim(x_adv_norm, y_adv, model, device, eps_norm, alpha_norm, num_iter, orig_norm=x_adv_norm)
 
     perturbed = perturbed_norm * std_t + mean_t
     perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
