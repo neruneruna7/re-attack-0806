@@ -47,7 +47,7 @@ class ReAttackKind(str, Enum):
 
 class PresetKind(str, Enum):
     """プリセットの種類"""
-    MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
+    MORIMOTO_MNIST_BIM_BIM = "morimoto_mnist_bim_bim"
     DEFAULT = "default"
 
 
@@ -56,7 +56,7 @@ PRESETS = {
     PresetKind.DEFAULT: {
         # デフォルト設定
     },
-    PresetKind.MORIMOTO_MNIST_BIM: {
+    PresetKind.MORIMOTO_MNIST_BIM_BIM: {
         "dataset": DatasetKind.MNIST,
         "model": ModelKind.MORIMOTO_MNIST,
         "attack": AttackKind.BIM,
@@ -89,7 +89,7 @@ class Config:
     reattack_alpha: float = 0.05
     reattack_iters: int = 10
     batch_size: int = 1
-    num_samples: int = 100
+    num_samples: Optional[int] = 10000
     device: Optional[torch.device] = None
 
 
@@ -256,9 +256,9 @@ class ReAttackRunner:
         results = []
 
         for i, (data, target) in enumerate(self.test_loader):
-            if i >= self.cfg.num_samples:
+            if self.cfg.num_samples != None and i >= self.cfg.num_samples:
                 break
-                
+            
             data = data.to(self.device)
             target = target.to(self.device).view(-1).long()
             data.requires_grad = True
@@ -359,7 +359,7 @@ def parse_args() -> Config:
                         help="再攻撃の反復回数")
     parser.add_argument("--batch-size", type=int, default=1,
                         help="バッチサイズ")
-    parser.add_argument("--num-samples", type=int, default=100,
+    parser.add_argument("--num-samples", type=int, default=None,
                         help="処理するサンプル数")
     
     args = parser.parse_args()

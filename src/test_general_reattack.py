@@ -83,7 +83,7 @@ def test_preset():
         from general_reattack import Config, apply_preset, PresetKind
         
         cfg = Config()
-        cfg_preset = apply_preset(cfg, PresetKind.MORIMOTO_MNIST_BIM)
+        cfg_preset = apply_preset(cfg, PresetKind.MORIMOTO_MNIST_BIM_BIM)
         
         assert cfg_preset.epsilon == 0.3
         assert cfg_preset.alpha == 0.05
@@ -161,8 +161,8 @@ def test_command_line_parsing():
         import subprocess
         
         result = subprocess.run(
-            ["uv", "run", "python", "src/general_reattack.py", "--help"],
-            cwd="/home/runner/work/re-attack-0806/re-attack-0806",
+            ["uv", "run", "python", "./src/general_reattack.py", "--help"],
+            cwd="~/workspace/univ/lab/re-attack-0806/re-attack-0806",
             capture_output=True,
             text=True,
             timeout=10
