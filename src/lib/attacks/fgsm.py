@@ -14,7 +14,7 @@ def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -
         mean = torch.tensor([0.1307], device=device, dtype=dtype).view(1, -1, 1, 1)
         std = torch.tensor([0.3081], device=device, dtype=dtype).view(1, -1, 1, 1)
     else:
-        # CIFAR-ish defaults
+        # CIFAR 風の既定値
         mean = torch.tensor([0.4914, 0.4822, 0.4465], device=device, dtype=dtype).view(1, -1, 1, 1)
         std = torch.tensor([0.2470, 0.2435, 0.2616], device=device, dtype=dtype).view(1, -1, 1, 1)
     return mean, std
@@ -65,7 +65,7 @@ def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module,
     perturbed = image_denorm + epsilon * sign_grad
     perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
 
-    # cleanup
+    # クリーンアップ
     image_norm.grad = None
 
     return perturbed

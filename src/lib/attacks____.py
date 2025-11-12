@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
-# FGSM attack code
+# FGSM 攻撃コード
 # def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
 #     """
 #     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)
@@ -13,41 +13,41 @@ from torch import Tensor
 #     """
     
 
-#     # mean/std on device
+#     #     # デバイス上の mean/std
 #     mean = torch.tensor([0.1307], dtype=image.dtype, device=device).view(1, -1, 1, 1)
 #     std = torch.tensor([0.3081], dtype=image.dtype, device=device).view(1, -1, 1, 1)
 
-#     # prepare normalized input as a leaf with requires_grad
+#     #     # 正規化した入力を requires_grad True の leaf として準備
 #     image_denorm = image.clone().detach().to(device)
 #     image_norm = (image_denorm - mean) / std
 #     image_norm = image_norm.clone().detach().requires_grad_(True)
     
-#     # forward / loss / backward (local, does not modify external tensors)
+#     #     # 順伝播 / 損失 / 逆伝播（ローカル。外部テンソルは変更しない）
 #     model.zero_grad()
 #     output = model(image_norm)
 #     output = F.log_softmax(output, dim=1)
 
-#     # loss = F.cross_entropy(output, target)
+#     #     # loss = F.cross_entropy(output, target)
 #     loss = F.nll_loss(output, target)
 
-#     # backward to get dL/dx_norm
+#     #     # dL/dx_norm を得るために逆伝播
 #     loss.backward()
 
 #     grad: Tensor | None = image_denorm.grad
 #     if grad is None :
 #         raise RuntimeError("grad is None. model may not have been called with requires_grad input.")
-#     data_grad_norm = grad.detach()  # gradient w.r.t. normalized input
+#     #     data_grad_norm = grad.detach()  # 正規化入力に対する勾配
 #     print(f"data_grad_norm: {data_grad_norm}")
 
-#     # convert gradient to pixel space: dL/dx_pixel = dL/dx_norm * (1/std)
+#     #     # ピクセル空間への勾配変換: dL/dx_pixel = dL/dx_norm * (1/std)
 #     grad_pixel = data_grad_norm / std
 
-#     # FGSM in pixel space
+#     #     # ピクセル空間での FGSM
 #     sign_data_grad = grad_pixel.sign()
 #     perturbed = image_denorm + epsilon * sign_data_grad
 #     perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
 
-#     # cleanup grads to avoid side effects
+#     #     # 副作用を避けるため勾配をクリーンアップ
 #     image_norm.grad = None
 
 #     return perturbed

@@ -20,7 +20,7 @@ from lib.models import MorimotoMnist, MorimotoCifar10, Ploof
 from lib import attacks, utils
 from lib.attacks import bim, fgsm
 from lib import attacks____
-# use attacks package under lib (implements fgsm and bim)
+# lib 以下の attacks パッケージを使用（fgsm と bim を実装）
 
 import foolbox
 
@@ -49,10 +49,10 @@ class PresetKind(str, Enum):
     BIM_ADVO = "bim_advo"
     DEFAULT = "default"
 
-# Preset mapping: each preset sets fields on Config (uses enum values where appropriate)
+# プリセットマッピング: 各プリセットは Config のフィールドを設定する（必要に応じて enum 値を使用）
 PRESETS = {
     PresetKind.DEFAULT: {
-        # no-op
+    # 何もしない（noop）
     },
     PresetKind.MORIMOTO_MNIST_BIM: {
         "dataset": DatasetKind.MNIST,
@@ -185,12 +185,12 @@ class Runner:
                 self.model.load_state_dict(st)
                 print(f"loaded weights from {path}")
             except Exception:
-                # try looser loading (in case saved dict had extra wrappers)
+                # より緩い読み込みを試みる（保存された state_dict にラッパー等が含まれる場合）
                 print(f"failed to load exact state_dict from {path}, continuing with init model")
 
     @staticmethod
     def _to_logits(output: Tensor) -> Tensor:
-        # convert (N,C,H,W) -> (N,C) by global averaging if needed
+    # （必要であれば）(N,C,H,W) を全体平均して (N,C) に変換する
         if output.dim() == 4:
             return output.mean(dim=(2, 3))
         if output.dim() > 2:
@@ -207,47 +207,47 @@ class Runner:
             target = target.to(self.device).view(-1).long()
             data.requires_grad = True
 
-            # forward
+            # 順伝播
             output = self.model(data)
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
-            # compute loss and grads
+            # 損失と勾配を計算
             loss = F.cross_entropy(logits, target)
             self.model.zero_grad()
             loss.backward()
             grad = data.grad
             if grad is None:
-                # skip and continue; could log for debugging
+                # スキップして続行（デバッグ用にログを残しても良い）
                 print(f"skip idx {i}: no grad")
                 continue
             data_grad = grad.data
 
-            # convert grad -> denorm if needed (utils.denorm expects normalized input? existing code used it)
+            # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
             data_denorm = utils.denorm(data_grad, self.device)
 
-            # attack
+            # 攻撃実行
             import foolbox
 
             if self.cfg.attack == AttackKind.BIM:
-                # Use bim_attack from lib.attacks package (internal implementation)
+                # lib.attacks の内部実装である bim_attack を使用
                 perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
                                            target, self.model, self.device)
             elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                # Use Foolbox implementation of Linf Basic Iterative Attack
-                # Prepare preprocessing depending on channel count
+                # Foolbox による Linf Basic Iterative Attack を使用
+                # チャンネル数に応じた前処理パラメータを準備
                 if data.dim() == 4 and data.size(1) == 1:
                     preprocessing = dict(mean=[0.1307], std=[0.3081], axis=-3)
                 else:
                     preprocessing = dict(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261], axis=-3)
                 bounds = (0.0, 1.0)
                 try:
-                    # pylanceの警告を抑制する． # type: ignore[reportPrivateImportUsage] を使う．
+                    # pylance の警告を抑制する（# type: ignore を付与）
                     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
                     attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
                     # ここまでpylanceの警告を抑制する．
                     raw, clipped, is_adv = attack(fmodel, data_denorm, target, epsilons=self.cfg.epsilon)
-                    # clipped may be a single tensor or a list/array depending on foolbox version
+                    # clipped は foolbox のバージョンにより単体のテンソルかリストになることがある
                     perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
                 except Exception as e:
                     print(f"Foolbox BIM attack failed: {e}")
@@ -262,9 +262,9 @@ class Runner:
                 # # print(is_adv)
                 # perturbed = clipped
             elif self.cfg.attack == AttackKind.FGSM:
-                # FGSM expects (image_denorm, epsilon, target, model, device)
+                # FGSM は (image_denorm, epsilon, target, model, device) を想定
                 # perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
-                 # normalize perturbed for model inference
+                # モデル推論のために perturbed を正規化
                 perturbed = fgsm.fgsm_attack(
                     data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
                 )
@@ -319,13 +319,13 @@ def main():
     runner = Runner(cfg)
     result = runner.run()
 
-    # compute stats: only consider samples that were initially correct
+    # 統計を計算: 最初に正しく分類されていたサンプルのみを考慮
     fail = 0
     total = 0
     mean_mean_perturb = 0.0
     for idx, before, after, ex, m in result:
-        # need original true label; we can reload dataset sample if necessary,
-        # but here assume before was model's initial pred and compare with that
+    # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
+    # ここでは以前のモデルの初期予測を用いて比較することを想定
         total += 1
         mean_mean_perturb += m
         if after != before:

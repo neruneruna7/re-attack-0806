@@ -57,7 +57,7 @@ def load_saved_denorm_image(dir: str, epsilon: float, index: int, device, true_l
     if not os.path.exists(path):
         raise FileNotFoundError(f"saved image not found: {path}")
     img = Image.open(path).convert("L")  # グレースケール
-    to_tensor = torchvision.transforms.ToTensor()  # returns C,H,W in 0..1
+    to_tensor = torchvision.transforms.ToTensor()  # C,H,W の 0..1 に正規化して返す
     t = to_tensor(img).unsqueeze(0).to(device)  # [1,1,H,W]
     return t
 
@@ -83,22 +83,21 @@ def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Modul
 
     This function does not modify model state and runs in eval() context without gradients.
     """
-    # ensure model in eval
+    # モデルを評価モードにする
     was_training = model.training
     model.eval()
 
-    # build normalization tensors
+    # 正規化用のテンソルを構築
     mean_t = torch.tensor(mean, dtype=img_denorm.dtype, device=device).view(1, -1, 1, 1)
     std_t = torch.tensor(std, dtype=img_denorm.dtype, device=device).view(1, -1, 1, 1)
 
-    # normalize
+    # 正規化
     img_norm = (img_denorm - mean_t) / std_t
 
-    # Forward and capture feature before final fully-connected
-    # For lib.lenet.Net, fc1 is the layer we want (after flatten)
-    # We'll run forward manually up to fc1
+    # 順伝播して、最終全結合層の直前の特徴を取得する
+    # lib.lenet.Net では fc1 が目的の層（flatten の後）なので、fc1 まで手動で順伝播を実行する
     with torch.no_grad():
-        # call modules via getattr to avoid static-analysis issues
+    # 静的解析上の問題を避けるため getattr 経由でモジュールを呼び出す
         conv1 = getattr(model, "conv1")
         conv2 = getattr(model, "conv2")
         dropout1 = getattr(model, "dropout1")
@@ -114,15 +113,15 @@ def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Modul
         feat = fc1(x)
         feat = torch.nn.functional.relu(feat)
 
-    # restore training state
+    # 訓練時の状態を復元する
     if was_training:
         model.train()
 
-    # return as numpy 1-D vector
+    # numpy の1次元ベクトルとして返す
     return feat.squeeze(0).cpu().numpy()
 
 
-# restores the tensors to their original scale
+# テンソルを元のスケールに戻す
 def denorm(batch, device, mean=[0.1307], std=[0.3081]) -> Tensor:
     """
     Convert a batch of tensors to their original scale.
@@ -162,23 +161,23 @@ def save_tensor_as_image(tensor: Tensor, path: str):
     path: output png path
     """
     t = tensor.clone().detach().cpu()
-    # squeeze batch/channel dims if needed
+    # 必要に応じてバッチ／チャンネル次元を潰す
     if t.dim() == 4:
         t = t[0]
     if t.dim() == 3 and t.size(0) == 1:
         arr = t.squeeze(0).numpy()
     elif t.dim() == 3 and t.size(0) == 3:
-        # convert CHW -> HWC
+    # CHW を HWC に変換
         arr = t.permute(1, 2, 0).numpy()
     elif t.dim() == 2:
         arr = t.numpy()
     else:
         arr = t.numpy()
 
-    # clip and convert to uint8
+    # クリップして uint8 に変換
     arr = np.clip(arr, 0.0, 1.0)
     arr_u8 = (arr * 255.0).astype(np.uint8)
-    # create parent dir
+    # 親ディレクトリを作成
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     img = Image.fromarray(arr_u8)
     img.save(path)

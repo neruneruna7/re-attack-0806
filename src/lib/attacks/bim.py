@@ -13,7 +13,7 @@ def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -
         mean = torch.tensor([0.1307], device=device, dtype=dtype).view(1, -1, 1, 1)
         std = torch.tensor([0.3081], device=device, dtype=dtype).view(1, -1, 1, 1)
     else:
-        # CIFAR-ish defaults
+        # CIFAR 風の既定値
         mean = torch.tensor([0.4914, 0.4822, 0.4465], device=device, dtype=dtype).view(1, -1, 1, 1)
         std = torch.tensor([0.2470, 0.2435, 0.2616], device=device, dtype=dtype).view(1, -1, 1, 1)
     return mean, std
@@ -54,7 +54,7 @@ def bim_attack(image: Tensor,
     perturbed = image_denorm.clone().detach()
     orig = image_denorm.clone().detach()
 
-    # ensure target on correct device and dtype
+    # ターゲットを正しいデバイスとデータ型に移す
     if target is not None:
         target = target.to(device)
         if target.dim() == 0:
@@ -64,13 +64,13 @@ def bim_attack(image: Tensor,
     loss_fn = nn.CrossEntropyLoss()
 
     for _ in range(num_iter):
-        # prepare normalized input with grad
+    # 勾配計算用に正規化した入力を準備
         perturbed_norm = (perturbed - mean_t) / std_t
         perturbed_norm = perturbed_norm.clone().detach().requires_grad_(True)
 
         outputs = model(perturbed_norm)
         loss = loss_fn(outputs, target)
-        # backprop
+    # 逆伝播
         model.zero_grad()
         loss.backward()
 
@@ -81,7 +81,7 @@ def bim_attack(image: Tensor,
         grad_pixel = grad_norm / std_t
         perturbed = perturbed + alpha * grad_pixel.sign()
 
-        # project into epsilon-ball and clamp
+    # epsilon-球に射影してクリップ
         delta = torch.clamp(perturbed - orig, min=-epsilon, max=epsilon)
         perturbed = torch.clamp(orig + delta, 0.0, 1.0).detach()
 
