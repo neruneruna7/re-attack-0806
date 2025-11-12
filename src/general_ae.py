@@ -231,9 +231,6 @@ class Runner:
                     perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
                 except Exception as e:
                     print(f"Foolbox BIM attack failed: {e}")
-                    # fallback to internal BIM
-                    perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                                               target, self.model, self.device)
                 # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
                 # preprocessing = dict(mean=[0.1307], std=[0.3081])
                 # bounds = (-float("inf"), float("inf"))
@@ -244,13 +241,16 @@ class Runner:
                 # # print("clipped:", clipped)
                 # # print(is_adv)
                 # perturbed = clipped
-            else:
+            elif self.cfg.attack == AttackKind.FGSM:
                 # FGSM expects (image_denorm, epsilon, target, model, device)
                 # perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
                  # normalize perturbed for model inference
                 perturbed = fgsm.fgsm_attack(
                     data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
                 )
+            else:
+                raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
+    
             if data.dim() == 4 and data.size(1) == 1:
                 perturbed_norm = transforms.Normalize((0.1307,), (0.3081,))(perturbed)
             else:
