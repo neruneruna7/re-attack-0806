@@ -40,7 +40,7 @@ def main():
     # model = MorimotoCifar10.Cifar10Net().to(device)
     # model = Ploof.PloofNet(10).to(device)
 
-    fmodel = foolbox.PyTorchModel(model)
+    # fmodel = foolbox.PyTorchModel(model)
 
     # # Load the pretrained model
     # model_path = os.path.join(model_save_dir, f'{model.model_name}.pth')

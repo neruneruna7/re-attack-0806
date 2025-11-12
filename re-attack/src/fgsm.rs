@@ -28,10 +28,16 @@ pub fn fgsm<B: AutodiffBackend>(
         let batch = MnistBacher::default().batch(vec![item.clone()], &device);
         let [batch_size, height, width] = batch.images.dims();
         // チャネル数1を加えて，4次元に変換
-        let image = batch.images.clone().reshape([batch_size, 1, height, width]);
+
+        let y = model.forward_classification(batch);
+        let output = y.output;
+        let loss = y.loss;
+
+        // let image = batch.images.clone().reshape([batch_size, 1, height, width]);
         // .detach();
 
         let output_adv = fgsm_inner(&device, &model, batch.targets, image, epsilon).detach();
+        todo!("一旦停止");
         // let predicated = output.argmax(1).flatten::<1>(0, 1).into_scalar();
         let final_pred = output_adv.argmax(1).flatten::<1>(0, 1).into_scalar();
 
@@ -73,31 +79,36 @@ fn fgsm_inner<B: AutodiffBackend>(
     image: Tensor<B, 4>,
     epsilon: f32,
 ) -> Tensor<B, 2> {
-    let data = image.require_grad();
+    let x = image.require_grad();
 
     // println!("Original image: {image}");
-    let clean_output = model.forward(data.clone());
-    let clean_pred = clean_output
-        .clone()
-        .argmax(1)
-        .flatten::<1>(0, 1)
-        .into_scalar();
+    let y = model.forward(x.clone());
+    // バッチの段階で渡してどうにかするか？
+    let output = model.forward_classification(batch)
+    // let clean_pred = y.clone().argmax(1).flatten::<1>(0, 1).into_scalar();
+
+    // let sample_gradient = y.backward();
+    // let tensor_grad = x.grad(&sample_gradient).unwrap();
+
+    // info!("y={y}");
+    // info!("dy/dx = {}", &tensor_grad);
 
     // 損失計算
     // pytorchチュートリアルでな負の対数尤度を使ってた
     // 先輩のではクロスエントロピーだった
     // クロスエントロピーを使ってみよう
     let loss_fn = burn::nn::loss::CrossEntropyLossConfig::new().init::<B>(&device);
-    let loss = loss_fn.forward(clean_output.clone(), target);
-    info!("loss: {}", loss.to_data());
+    let loss = loss_fn.forward(y, target);
+    // info!("loss: {}", loss.to_data());
 
     // burnでpytorchのzero_grad()に相当する操作は？
 
     // 逆伝播
-    let grad = loss.backward();
-    let data_grad = data.grad(&grad).unwrap();
-    let data_denorm = denorm::<B, 1>(data.clone(), [MEAN], [STD], device);
+    let gradient = loss.backward();
+    let data_grad = x.grad(&gradient).unwrap();
     info!("dy/dx: {}", &data_grad);
+    panic!("ここまで動作確認");
+    let data_denorm = denorm::<B, 1>(x.clone(), [MEAN], [STD], device);
 
     let data_grad = Tensor::<B, 4>::from_inner(data_grad.clone());
 

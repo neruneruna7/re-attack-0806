@@ -24,6 +24,8 @@ import foolbox
 class DatasetKind(str, Enum):
     MNIST = "mnist"
     CIFAR10 = "cifar10"
+    IMAGE_NET = "imagenet"
+    INCEPTION_V3 = "inception_v3"
 
 
 class ModelKind(str, Enum):
@@ -40,6 +42,7 @@ class AttackKind(str, Enum):
 class PresetKind(str, Enum):
     MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
     SAMPLE_PLOOF = "sample_ploof"
+    BIM_ADVO = "bim_advo"
     DEFAULT = "default"
 
 # Preset mapping: each preset sets fields on Config (uses enum values where appropriate)
@@ -61,6 +64,15 @@ PRESETS = {
         "model": ModelKind.PLOOF,
         "attack": AttackKind.FGSM,
     },
+    PresetKind.BIM_ADVO : {
+        "dataset": DatasetKind.IMAGE_NET,
+        "model": ModelKind.INCEPTION_V3,
+        "attack": AttackKind.BIM,
+        "epsilon": 0.3,
+        "alpha": 0.05,
+        "n": 10,
+        "batch_size": 1,
+    }
 }
 
 
@@ -120,6 +132,14 @@ class DataFactory:
                                      (0.247, 0.243, 0.261))
             ])
             ds = datasets.CIFAR10('../data', train=False, download=True, transform=transform)
+        elif kind == DatasetKind.IMAGE_NET:
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406),
+                                     (0.229, 0.224, 0.225))
+            ])
+            ds = datasets.ImageNet('../data/image_net', split='val', transform=transform)
         else:
             raise ValueError(f"unsupported dataset kind: {kind}")
         return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True)
@@ -186,18 +206,18 @@ class Runner:
             import foolbox
 
             if self.cfg.attack == AttackKind.BIM:
-                # perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                                            #    data_grad, self.model, self.device)
+                perturbed = attacks.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
+                                               data_grad, self.model, self.device)
                 # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
-                preprocessing = dict(mean=[0.1307], std=[0.3081])
-                bounds = (-float("inf"), float("inf"))
-                fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing,  device=self.device)
-                attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha)
-                raw, clipped, is_adv = attack(fmodel, data_denorm, target,  epsilons=0.03)
-                # print("row data:", raw)
-                # print("clipped:", clipped)
-                # print(is_adv)
-                perturbed = clipped
+                # preprocessing = dict(mean=[0.1307], std=[0.3081])
+                # bounds = (-float("inf"), float("inf"))
+                # fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing,  device=self.device)
+                # attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha)
+                # raw, clipped, is_adv = attack(fmodel, data_denorm, target,  epsilons=0.03)
+                # # print("row data:", raw)
+                # # print("clipped:", clipped)
+                # # print(is_adv)
+                # perturbed = clipped
             else:
                 # FGSM expects (image_denorm, epsilon, target, model, device)
                 perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
