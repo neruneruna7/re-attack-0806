@@ -10,7 +10,83 @@
 マシンはm4 mac miniを使用している．GPUにはMPSを指定すること．
 Pythonのパッケージマネージャにはuvを使用している．
 
-## プロジェクトサマリー（自動追加）
+# フェーズ概要
+## 必須フェーズ vs 任意フェーズ
+### 必須フェーズ ほぼすべてのケースで実行
+1. Phase 1: Investigation & Research - Context7/Kiriで調査．mcp-gemini-cliのgoogle search toolででWeb検索
+2. Phase 4: Planning - TodoWriteで計画立案
+3. Phase 5: Implementation - Serenaでコード実装
+4. Phase 7: Code Review - コードの見直し．
+
+## workflow steps
+### Phase 1: Investigation & Research (調査フェーズ) 【必須】
+
+**使用ツール**: Context7 MCP, Kiri MCP, gemini-cli (Google Search)
+
+#### 1. 既存コードベースの調査（Kiri MCPを使用）
+
+Kiri MCPはSerenaより高度な検索機能を提供します。セマンティック検索、フレーズ認識、依存関係分析などを活用してください。
+
+**1-1. コンテキスト自動取得（推奨）**
+```
+mcp__kiri__context_bundle
+goal: 'adversarial attack, re-attack, PyTorch, FGSM, BIM'
+limit: 10
+compact: true
+```
+- タスクに関連するコードスニペットを自動でランク付けして取得
+- `goal`には具体的なキーワードを使用（抽象的な動詞は避ける）
+- `compact: true`でトークン消費を95%削減
+
+**1-2. 具体的なキーワード検索**
+```
+mcp__kiri__files_search
+query: 'fgsm grad'
+lang: 'python'
+path_prefix: 'src/'
+```
+- 関数名、クラス名、エラーメッセージなど具体的な識別子で検索
+- 広範な調査には`context_bundle`を使用
+
+**1-3. 依存関係の調査**
+```
+mcp__kiri__deps_closure
+path: 'src/auth/login.ts'
+direction: 'inbound'
+max_depth: 3
+```
+- 影響範囲分析（inbound）や依存チェーン（outbound）を取得
+- リファクタリング時の影響調査に最適
+
+**1-4. コードの詳細取得**
+```
+mcp__kiri__snippets_get
+path: 'src/auth/login.ts'
+```
+- ファイルパスがわかっている場合に使用
+- シンボル境界を認識して適切なセクションを抽出
+
+#### 2. ライブラリドキュメントの確認
+- Context7 MCPを使用して最新のライブラリドキュメントを取得
+- Next.js, React, その他使用するライブラリの最新情報を確認
+- `mcp__context7__resolve-library-id` → `mcp__context7__get-library-docs` の順で実行
+
+#### 3. Web検索による補完調査（mcp-gemini-cliのGoogle Search Toolを使用）
+- mcp-gemini-cliのGoogle Search Toolを使用して、関連する情報を検索. 特に関連する論文や，研究の例を調査．
+
+**重要** 特に論文や研究に関する情報を得た場合，そのURLや概要を/doc/bib.md に必ず追記すること．
+
+#### 4. 調査結果の整理
+- 既存パターンやコーディング規約を把握
+- 再利用可能なコンポーネントやユーティリティを特定
+- Kiriで取得したコンテキストを基に実装方針を決定
+
+**完了チェックリスト:**
+- [ ] Kiri MCPで関連コードを特定
+- [ ] 必要なライブラリのドキュメントを確認
+- [ ] 既存パターンと依存関係を把握
+
+# プロジェクトサマリー（自動追加）
 
 このリポジトリは，機械学習モデルに対する adversarial attack（攻撃）とそれに対する再攻撃（re-attack）を扱う実験コード群を含んでいます。主に Python / PyTorch による実験コードと，攻撃アルゴリズムの一部を実装した Rust サブプロジェクトを含みます。以下に主要な構成を示します。
 
