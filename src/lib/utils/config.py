@@ -22,8 +22,6 @@ class DatasetKind(str, Enum):
     MNIST = "mnist"
     CIFAR10 = "cifar10"
     IMAGE_NET = "imagenet"
-    INCEPTION_V3 = "inception_v3"
-
 
 class ModelKind(str, Enum):
     MORIMOTO_MNIST = "mnist"
@@ -31,14 +29,10 @@ class ModelKind(str, Enum):
     INCEPTION_V3 = "inception_v3"
     PLOOF = "ploof"
 
-
 class AttackKind(str, Enum):
     BIM = "bim"
     FGSM = "fgsm"
     FOOLBOX_BIM = "foolbox_bim"
-
-
-
 
 class DatasetNorm:
     """データセット種別に基づく正規化/非正規化を行うユーティリティクラス。
@@ -76,8 +70,6 @@ class DatasetNorm:
         x = x.to(self.device)
         return x * self.std + self.mean
 
-
-
 class ModelFactory:
     @staticmethod
     def create(kind: ModelKind, device: torch.device) -> nn.Module:
@@ -94,7 +86,6 @@ class ModelFactory:
             model = inception_v3(pretrained=False, aux_logits=False)
             return model.to(device)
         raise ValueError(f"unsupported model kind: {kind}")
-
 
 class DataFactory:
     @staticmethod
@@ -124,6 +115,7 @@ class DataFactory:
             # その場合はローカルに展開済みの val ディレクトリを ImageFolder で読み込むフォールバックを行う。
             try:
                 ds = datasets.ImageNet('../data/image_net', split='val', transform=transform)
+                # ds = datasets.ImageFolder('../data/image_net/ILSVRC2012_img_val', transform=transform)
             except RuntimeError as e:
                 # 典型的なエラーメッセージ例:
                 # "The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted."
