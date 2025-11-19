@@ -200,7 +200,7 @@ def parse_args() -> Config:
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--save-attacked-images", action="store_true", default=True,
                         help="Save attacked images to specified output directory")
-    parser.add_argument("--output-dir", type=str, default="data/attacked_images",
+    parser.add_argument("--output-dir", type=str, default="attacked_data",
                         help="Directory to save attacked images")
     args = parser.parse_args()
     cfg = Config(
