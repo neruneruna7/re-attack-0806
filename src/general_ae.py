@@ -25,6 +25,8 @@ import foolbox
 from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
 from re_attack_0806.utils.normTensor import *
 
+from tqdm import tqdm
+
 @dataclass
 class Config:
     dataset: DatasetKind = DatasetKind.MNIST
@@ -74,12 +76,14 @@ class Runner:
             return output.view(output.size(0), output.size(1), -1).mean(dim=2)
         return output
     
-    def run(self) -> List[Tuple[int, int, int, Tensor, float]]:
+    def run(self) -> List[Tuple[int, int, int, int, Tensor, float]]:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
         self.model.eval()
         adv_examples = []
 
-        for i, (data, target) in enumerate(self.test_loader):
+        for i, (data, target) in tqdm(enumerate(self.test_loader)):
+            if i >= 100:  # 最初の100サンプルだけ攻撃
+                break
             data = data.to(self.device)
             data = TensorWithState(data, DENORMALIZED)
             data = self.cfg.dataset_norm.normalize(data)
@@ -92,6 +96,9 @@ class Runner:
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
+            print(f"\n[Debug] Index: {i}")
+            print(f"  Dataset Label (target): {target.item()}")
+            print(f"  Model Prediction (pred): {pred.item()}")
 
             # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
             # data_denorm = utils.denorm(data_grad, self.device)
@@ -178,7 +185,7 @@ class Runner:
 
 
             # print(f"mean_perturb {mean_perturb}")
-            adv_examples.append((i, pred.item(), pred2.item(), perturbed.tensor.squeeze().detach().cpu(), average_perturbation.item()))
+            adv_examples.append((i, target.item(), pred.item(), pred2.item(), perturbed.tensor.squeeze().detach().cpu(), average_perturbation.item()))
         return adv_examples
     
 def parse_args() -> Config:
@@ -191,7 +198,7 @@ def parse_args() -> Config:
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--n", type=int, default=10, help="number of iterations for BIM")
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--save-attacked-images", action="store_true",
+    parser.add_argument("--save-attacked-images", action="store_true", default=True,
                         help="Save attacked images to specified output directory")
     parser.add_argument("--output-dir", type=str, default="data/attacked_images",
                         help="Directory to save attacked images")
@@ -219,15 +226,18 @@ def main():
 
     # 統計を計算: 最初に正しく分類されていたサンプルのみを考慮
     fail = 0
+    clean_acc_total = 0
     total = 0
     mean_mean_perturb = 0.0
-    for idx, before, after, ex, m in result:
+    for idx, target, before, after, ex, m in result:
+        total += 1
         # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
         # ここでは以前のモデルの初期予測を用いて比較することを想定
-        total += 1
-        mean_mean_perturb += m
-        if after != before:
-            fail += 1
+        if before == target:
+            clean_acc_total += 1
+            mean_mean_perturb += m
+            if after != before:
+                fail += 1
 
         # 攻撃後の画像を保存する処理
         if cfg.save_attacked_images:
@@ -251,10 +261,13 @@ def main():
             print(f"Saved attacked image to {output_filename}")
 
 
-    attack_acc = (fail / total) if total > 0 else 0.0
-    mean_perturb = (mean_mean_perturb / total) if total > 0 else 0.0
-    print(f"Epsilon: {cfg.epsilon}\tAttack Success Rate = {attack_acc} = {fail} / {total}")
-    print(f"Mean Perturbation = {mean_perturb}")
+    attack_acc = (fail / clean_acc_total) if clean_acc_total > 0 else 0.0
+    mean_perturb = (mean_mean_perturb / clean_acc_total) if clean_acc_total > 0 else 0.0
+    print(f"Epsilon: {cfg.epsilon}\t攻撃成功率= {attack_acc} = {fail} / {clean_acc_total}")
+    print(f"攻撃成功率(クリーン画像の識別を失敗しているサンプルも含む): {fail/total} / {total}")
+    print(f"平均摂動量(L2ノルム) = {mean_perturb}")
+    print(f"クリーン画像を正しく分類したサンプル数: {clean_acc_total}")
+    print(f"処理したサンプル総数: {total}")
 
 if __name__ == "__main__":
     main()

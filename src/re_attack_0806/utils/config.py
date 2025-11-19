@@ -131,7 +131,7 @@ class ModelFactory:
             return Ploof.PloofNet(10).to(device)
         if kind == ModelKind.INCEPTION_V3:
             from torchvision.models import inception_v3
-            model = inception_v3(pretrained=False, aux_logits=False)
+            model = inception_v3(pretrained=True, aux_logits=True)
             return model.to(device)
         raise ValueError(f"unsupported model kind: {kind}")
 
