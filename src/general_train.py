@@ -136,8 +136,8 @@ def main():
     # general_train_param = cifar10_train_param
 
     # DataFactory を使ってデータローダを生成（config.py に定義された変換と正規化を利用）
-    train_loader = DataFactory.loader(DatasetKind.MNIST, batch_size=mnist_train_param.batch_size)
-    test_loader = DataFactory.loader(DatasetKind.MNIST, batch_size=mnist_train_param.batch_size)
+    train_loader = DataFactory.loader(DatasetKind.MNIST, train=True, batch_size=mnist_train_param.batch_size)
+    test_loader = DataFactory.loader(DatasetKind.MNIST, train=False, batch_size=mnist_train_param.batch_size)
     
     device = utils.get_device()
     

@@ -96,20 +96,20 @@ class ModelFactory:
 
 class DataFactory:
     @staticmethod
-    def loader(kind: DatasetKind, batch_size: int):
+    def loader(kind: DatasetKind, batch_size: int, train: bool) -> torch.utils.data.DataLoader:
         if kind == DatasetKind.MNIST:
             transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.1307,), (0.3081,))
             ])
-            ds = datasets.MNIST('../data', train=False, download=True, transform=transform)
+            ds = datasets.MNIST('../data', train=train, download=True, transform=transform)
         elif kind == DatasetKind.CIFAR10:
             transform = transforms.Compose([
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465),
                                      (0.247, 0.243, 0.261))
             ])
-            ds = datasets.CIFAR10('../data', train=False, download=True, transform=transform)
+            ds = datasets.CIFAR10('../data', train=train, download=True, transform=transform)
         elif kind == DatasetKind.IMAGE_NET:
             transform = transforms.Compose([
                 transforms.Resize((224, 224)),
