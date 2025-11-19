@@ -40,7 +40,7 @@ class Config:
     device: Optional[torch.device] = None
     dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
     save_attacked_images: bool = True # 攻撃後の画像を保存するかどうかのフラグ
-    output_dir: str = "data/attacked_images" # 保存先ディレクトリ
+    output_dir: str = "attacked_data" # 保存先ディレクトリ
 
 class Runner:
     def __init__(self, cfg: Config):
@@ -243,13 +243,14 @@ def main():
         if cfg.save_attacked_images:
             # ex は perturbed.tensor.squeeze().detach().cpu() なので非正規化画像
             # 保存先のディレクトリを作成
-            # 例: data/attacked_images/eps_0.300/
-            output_folder = os.path.join(cfg.output_dir, f"eps_{cfg.epsilon:.3f}")
+            # 例: data/attacked_images/mnist/bim/eps_0.300/
+            dataset_name = cfg.dataset.value
+            attack_name = cfg.attack.value
+            output_folder = os.path.join(cfg.output_dir, dataset_name, attack_name, f"eps_{cfg.epsilon:.3f}")
             os.makedirs(output_folder, exist_ok=True)
             
             # ファイル名を構築
-            # 例: data/attacked_images/eps_0.300/idx_0_label_5.png
-            # utils.from_filename が .png を想定しているので .png で保存
+            # 例: data/attacked_images/mnist/bim/eps_0.300/idx_0_label_5.png
             output_filename = os.path.join(output_folder, f"idx_{idx}_label_{after}.png")
             
             # utils.save_tensor_as_image を使用
@@ -258,16 +259,19 @@ def main():
             # ただし、保存はPNGで行うため、テンソルの状態は問わない
             # utils.save_tensor_as_image は `Tensor` を受け取るので `ex` をそのまま渡す
             utils.save_tensor_as_image(ex, output_filename)
-            print(f"Saved attacked image to {output_filename}")
+            # print(f"Saved attacked image to {output_filename}")
 
 
     attack_acc = (fail / clean_acc_total) if clean_acc_total > 0 else 0.0
     mean_perturb = (mean_mean_perturb / clean_acc_total) if clean_acc_total > 0 else 0.0
+    print("\n=== Attack Summary ===")
     print(f"Epsilon: {cfg.epsilon}\t攻撃成功率= {attack_acc} = {fail} / {clean_acc_total}")
-    print(f"攻撃成功率(クリーン画像の識別を失敗しているサンプルも含む): {fail/total} / {total}")
+    print(f"攻撃成功率には，元の画像を正しく分類したサンプルのみを考慮している．")
     print(f"平均摂動量(L2ノルム) = {mean_perturb}")
     print(f"クリーン画像を正しく分類したサンプル数: {clean_acc_total}")
     print(f"処理したサンプル総数: {total}")
+
+    print("\n=== End of Attack Summary ===")
 
 if __name__ == "__main__":
     main()
