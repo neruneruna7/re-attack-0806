@@ -14,7 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sample-project = "lib:main"
+# sample-project = "lib:main"
+re-attack-0806 = "re_attack_0806:main"
 
 [build-system]
 requires = ["uv_build>=0.8.3,<0.9.0"]

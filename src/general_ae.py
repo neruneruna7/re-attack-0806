@@ -13,18 +13,18 @@ from PIL import Image
 from torch import Tensor
 from enum import Enum
 import argparse
-import lib
+import re_attack_0806
 from copy import deepcopy
 
-from lib.models import MorimotoMnist, MorimotoCifar10, Ploof
-from lib import attacks, utils
-from lib.attacks import bim, fgsm
-from lib import attacks____
+from re_attack_0806.models import MorimotoMnist, MorimotoCifar10, Ploof
+from re_attack_0806 import attacks, utils
+from re_attack_0806.attacks import bim, fgsm
+from re_attack_0806 import attacks____
 # lib 以下の attacks パッケージを使用（fgsm と bim を実装）
 
 import foolbox
 
-from lib.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
+from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
 
 
 class PresetKind(str, Enum):

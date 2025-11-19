@@ -14,11 +14,11 @@ from torch import Tensor
 # 型別名
 from enum import Enum
 import argparse
-import lib
+import re_attack_0806
 from copy import deepcopy
 
-from lib.models import MorimotoCifar10, MorimotoMnist, Ploof
-from lib.utils.normTensor import DenormTensor, NormTensor
+from re_attack_0806.models import MorimotoCifar10, MorimotoMnist, Ploof
+from re_attack_0806.utils.normTensor import * 
 
 
 class DatasetKind(str, Enum):
@@ -67,13 +67,15 @@ class DatasetNorm:
 
     def normalize(self, x: DenormTensor) -> NormTensor:
         """非正規化テンソルを受け取り、正規化テンソルを返す。"""
-        x = x.to(self.device)
-        return (x - self.mean) / self.std
+        x_tensor = x.tensor.to(self.device)
+        tensor = (x_tensor - self.mean) / self.std
+        return TensorWithState(tensor, NORMALIZED)
 
     def denormalize(self, x: NormTensor) -> DenormTensor:
         """正規化テンソルを受け取り、非正規化テンソルを返す。"""
-        x = x.to(self.device)
-        return x * self.std + self.mean
+        x_tensor = x.tensor.to(self.device)
+        tensor = x_tensor * self.std + self.mean
+        return TensorWithState(tensor, DENORMALIZED)
 
 class ModelFactory:
     @staticmethod
