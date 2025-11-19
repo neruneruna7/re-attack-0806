@@ -25,6 +25,7 @@ from re_attack_0806 import attacks____
 import foolbox
 
 from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
+from re_attack_0806.utils.normTensor import *
 
 
 class PresetKind(str, Enum):
@@ -123,12 +124,13 @@ class Runner:
 
         for i, (data, target) in enumerate(self.test_loader):
             data = data.to(self.device)
+            data = TensorWithState(data, NORMALIZED)
             # data = self.cfg.dataset_norm.normalize(data)
-            target = target.to(self.device).view(-1).long()
-            data.requires_grad = True
+            target: Tensor = target.to(self.device).view(-1).long()
+            data.tensor.requires_grad = True
 
             # 順伝播
-            output = self.model(data)
+            output = self.model(data.tensor)
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
@@ -136,7 +138,7 @@ class Runner:
             loss = F.cross_entropy(logits, target)
             self.model.zero_grad()
             loss.backward()
-            grad = data.grad
+            grad = data.tensor.grad
             if grad is None:
                 # スキップして続行（デバッグ用にログを残しても良い）
                 print(f"skip idx {i}: no grad")

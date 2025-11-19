@@ -5,8 +5,10 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch import Tensor
 
+from re_attack_0806.utils.normTensor import *
 
-def bim(input_norm: Tensor,
+
+def bim(input_norm: NormTensor,
         target: Tensor,
         eval_model: nn.Module,
         device: torch.device,
@@ -14,7 +16,7 @@ def bim(input_norm: Tensor,
         alpha_norm: float | Tensor,
         num_iter: int,
         *,
-        orig_norm: Optional[Tensor] = None) -> Tensor:
+        orig_norm: Optional[NormTensor] = None) -> NormTensor:
     """汎用 BIM 実装（正規化空間）。
 
     - input_norm: 攻撃開始点（正規化済みテンソル）。
@@ -24,12 +26,12 @@ def bim(input_norm: Tensor,
 
     これにより attack / reattack の両方の用途を同じ実装で扱える。
     """
-    input_norm = input_norm.clone().detach().to(device)
-    perturbed_norm = input_norm.clone().detach()
+    input_norm_inner = input_norm.tensor.clone().detach().to(device)
+    perturbed_norm = input_norm_inner.clone().detach()
     if orig_norm is None:
-        orig_norm = input_norm.clone().detach()
+        orig_norm_inner = input_norm.tensor.clone().detach()
     else:
-        orig_norm = orig_norm.clone().detach().to(device)
+        orig_norm_inner = orig_norm.tensor.clone().detach().to(device)
 
     # ターゲット整形
     if target is not None:
@@ -59,11 +61,10 @@ def bim(input_norm: Tensor,
 
         # delta を elementwise に clamp する（eps_norm はテンソルでもスカラーでも対応）
         # 最終的に摂動の大きさをepsilonで制限する
-        delta = perturbed_norm - orig_norm
+        delta = perturbed_norm - orig_norm_inner
         delta = torch.max(torch.min(delta, eps_norm), -eps_norm)
-        perturbed_norm = (orig_norm + delta).detach()
-    return perturbed_norm
-
+        perturbed_norm = (orig_norm_inner + delta).detach()
+    return NormTensor(perturbed_norm, input_norm.state)
 
 def _to_norm_params(epsilon: float, alpha: float, std_t: Tensor) -> tuple[Tensor, Tensor]:
     """ヘルパ: ピクセル空間の epsilon/alpha を正規化空間のテンソルに変換する。
@@ -74,66 +75,3 @@ def _to_norm_params(epsilon: float, alpha: float, std_t: Tensor) -> tuple[Tensor
     eps_norm = torch.tensor(epsilon, device=std_t.device, dtype=std_t.dtype) / std_t
     alpha_norm = torch.tensor(alpha, device=std_t.device, dtype=std_t.dtype) / std_t
     return eps_norm, alpha_norm
-
-
-def bim_attack(image: Tensor,
-               epsilon: float,
-               alpha: float,
-               num_iter: int,
-               target: Tensor,
-               model: nn.Module,
-               device: torch.device,
-               *,
-               mean: Optional[Tensor] = None,
-               std: Optional[Tensor] = None) -> Tensor:
-    """従来互換ラッパー: 非正規化入力を受け取り、非正規化出力を返す。
-
-    内部で正規化して `bim_attack_norm` を呼び出します。
-    """
-    image_denorm = image.clone().detach().to(device)
-    B, C, H, W = image_denorm.shape
-    if mean is None or std is None:
-        _, std_t = _default_mean_std(C, device, image_denorm.dtype)
-        mean_t, _ = _default_mean_std(C, device, image_denorm.dtype)
-    else:
-        mean_t = mean.to(device).view(1, -1, 1, 1)
-        std_t = std.to(device).view(1, -1, 1, 1)
-
-    # normalize
-    input_norm = (image_denorm - mean_t) / std_t
-
-    eps_norm, alpha_norm = _to_norm_params(epsilon, alpha, std_t)
-
-    perturbed_norm = bim(input_norm, target, model, device, eps_norm, alpha_norm, num_iter)
-
-    # convert back to denorm (pixel space)
-    perturbed = perturbed_norm * std_t + mean_t
-    perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
-    return perturbed
-
-
-def bim_reattack(model: nn.Module, x_adv: Tensor, y_adv: Tensor, device: torch.device, epsilon: float = 0.3,
-                 alpha: float = 0.05, num_iter: int = 10,
-                 mean: Optional[Tensor] = None,
-                 std: Optional[Tensor] = None) -> Tensor:
-    """従来互換ラッパー: 非正規化された adversarial を受け取り、非正規化で返す。
-
-    内部で正規化して `bim_reattack_norm` を呼び出します。
-    """
-    x_adv_denorm = x_adv.clone().detach().to(device)
-    B, C, H, W = x_adv_denorm.shape
-    if mean is None or std is None:
-        mean_t, std_t = _default_mean_std(C, device, x_adv_denorm.dtype)
-    else:
-        mean_t = mean.to(device).view(1, -1, 1, 1)
-        std_t = std.to(device).view(1, -1, 1, 1)
-
-    x_adv_norm = (x_adv_denorm - mean_t) / std_t
-
-    eps_norm, alpha_norm = _to_norm_params(epsilon, alpha, std_t)
-
-    perturbed_norm = bim(x_adv_norm, y_adv, model, device, eps_norm, alpha_norm, num_iter, orig_norm=x_adv_norm)
-
-    perturbed = perturbed_norm * std_t + mean_t
-    perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
-    return perturbed
