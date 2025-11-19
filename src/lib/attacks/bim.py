@@ -5,18 +5,6 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch import Tensor
 
-def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor]:
-    """チャネル数に応じた既定の平均 / 標準偏差を返す（MNIST / CIFAR を想定）。
-    戻り値は (mean, std) で、形状は [1, C, 1, 1]。
-    """
-    if channels == 1:
-        mean = torch.tensor([0.1307], device=device, dtype=dtype).view(1, -1, 1, 1)
-        std = torch.tensor([0.3081], device=device, dtype=dtype).view(1, -1, 1, 1)
-    else:
-        # CIFAR 風の既定値
-        mean = torch.tensor([0.4914, 0.4822, 0.4465], device=device, dtype=dtype).view(1, -1, 1, 1)
-        std = torch.tensor([0.2470, 0.2435, 0.2616], device=device, dtype=dtype).view(1, -1, 1, 1)
-    return mean, std
 
 def bim(input_norm: Tensor,
         target: Tensor,
@@ -70,6 +58,7 @@ def bim(input_norm: Tensor,
         perturbed_norm = perturbed_norm.detach() + alpha_norm * grad_norm.sign()
 
         # delta を elementwise に clamp する（eps_norm はテンソルでもスカラーでも対応）
+        # 最終的に摂動の大きさをepsilonで制限する
         delta = perturbed_norm - orig_norm
         delta = torch.max(torch.min(delta, eps_norm), -eps_norm)
         perturbed_norm = (orig_norm + delta).detach()

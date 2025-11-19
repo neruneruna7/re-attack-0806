@@ -1,6 +1,6 @@
 # ---- small utilities (package) ----
 import os
-from typing import Tuple
+from typing import Tuple, TypeAlias
 import torch
 import torchvision
 from PIL import Image
@@ -121,25 +121,6 @@ def extract_feature_vector_from_denorm(img_denorm: Tensor, model: torch.nn.Modul
     return feat.squeeze(0).cpu().numpy()
 
 
-# テンソルを元のスケールに戻す（既存の util と互換の関数）
-def denorm(batch, device, mean=[0.1307], std=[0.3081]) -> Tensor:
-    """
-    Convert a batch of tensors to their original scale.
-
-    Args:
-        batch (torch.Tensor): Batch of normalized tensors.
-        mean (torch.Tensor or list): Mean used for normalization.
-        std (torch.Tensor or list): Standard deviation used for normalization.
-
-    Returns:
-        torch.Tensor: batch of tensors without normalization applied to them.
-    """
-    if isinstance(mean, list):
-        mean_t: Tensor = torch.tensor(mean).to(device)
-    if isinstance(std, list):
-        std_t: Tensor = torch.tensor(std).to(device)
-
-    return batch * std_t.view(1, -1, 1, 1) + mean_t.view(1, -1, 1, 1)
 
 
 def save_tensor_as_image(tensor: Tensor, path: str):
@@ -170,3 +151,13 @@ def save_tensor_as_image(tensor: Tensor, path: str):
     img.save(path)
     info = f"saved image {path}"
     print(info)
+
+def l2_norm_perturbation(original: Tensor, perturbed: Tensor) -> Tensor:
+    delta = perturbed - original
+    print(f"delta average: {torch.mean(delta)}, delta min: {torch.min(delta)}, delta max: {torch.max(delta)}")
+
+    # delta = delta.view(delta.size(0), -1)  # flatten
+    # l2_norms = torch.linalg.norm(delta, dim=(1,2,3), p=2)  # バッチ内の各サンプルのL2ノルムを計算
+    l2_norms = torch.norm(delta, dim=(1,2,3), p=2)  # バッチ内の各サンプルのL2ノルムを計算)
+    average_perturbation = torch.mean(l2_norms)
+    return average_perturbation

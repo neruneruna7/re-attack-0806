@@ -24,6 +24,8 @@ from lib import attacks____
 
 import foolbox
 
+from lib.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
+
 
 class PresetKind(str, Enum):
     MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
@@ -74,6 +76,7 @@ class Config:
     n: int = 10
     batch_size: int = 1
     device: Optional[torch.device] = None
+    dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
 
 def apply_preset(cfg: Config, paper: PresetKind) -> Config:
     """Return new Config with preset fields applied (shallow copy)."""
@@ -120,6 +123,7 @@ class Runner:
 
         for i, (data, target) in enumerate(self.test_loader):
             data = data.to(self.device)
+            # data = self.cfg.dataset_norm.normalize(data)
             target = target.to(self.device).view(-1).long()
             data.requires_grad = True
 
@@ -140,65 +144,81 @@ class Runner:
             data_grad = grad.data
 
             # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
-            data_denorm = utils.denorm(data_grad, self.device)
-
+            # data_denorm = utils.denorm(data_grad, self.device)
+            data_denorm = self.cfg.dataset_norm.denormalize(data_grad)
+    
             # 攻撃実行
-            import foolbox
 
             if self.cfg.attack == AttackKind.BIM:
                 # lib.attacks の内部実装である bim_attack を使用
-                perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                                           target, self.model, self.device)
-            elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                # Foolbox による Linf Basic Iterative Attack を使用
-                # チャンネル数に応じた前処理パラメータを準備
-                if data.dim() == 4 and data.size(1) == 1:
-                    preprocessing = dict(mean=[0.1307], std=[0.3081], axis=-3)
-                else:
-                    preprocessing = dict(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261], axis=-3)
-                bounds = (0.0, 1.0)
-                try:
-                    # pylance の警告を抑制する（# type: ignore を付与）
-                    fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-                    attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
-                    # ここまでpylanceの警告を抑制する．
-                    raw, clipped, is_adv = attack(fmodel, data_denorm, target, epsilons=self.cfg.epsilon)
-                    # clipped は foolbox のバージョンにより単体のテンソルかリストになることがある
-                    perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-                except Exception as e:
-                    print(f"Foolbox BIM attack failed: {e}")
-                # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
-                # preprocessing = dict(mean=[0.1307], std=[0.3081])
-                # bounds = (-float("inf"), float("inf"))
-                # fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing,  device=self.device)
-                # attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha)
-                # raw, clipped, is_adv = attack(fmodel, data_denorm, target,  epsilons=0.03)
-                # # print("row data:", raw)
-                # # print("clipped:", clipped)
-                # # print(is_adv)
-                # perturbed = clipped
-            elif self.cfg.attack == AttackKind.FGSM:
-                # FGSM は (image_denorm, epsilon, target, model, device) を想定
-                # perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
-                # モデル推論のために perturbed を正規化
-                perturbed = fgsm.fgsm_attack(
-                    data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
+                # perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
+                #                            target, self.model, self.device)
+                print(f"data_denorm shape: {data_denorm.shape}")
+                perturbed = bim.bim(
+                    data_denorm,
+                    target,
+                    self.model,
+                    self.device,
+                    self.cfg.epsilon,
+                    self.cfg.alpha,
+                    self.cfg.n,
                 )
+                print(f"perturbed shape: {perturbed.shape}")
+            # elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
+            #     # Foolbox による Linf Basic Iterative Attack を使用
+            #     # チャンネル数に応じた前処理パラメータを準備
+            #     if data.dim() == 4 and data.size(1) == 1:
+            #         preprocessing = dict(mean=[0.1307], std=[0.3081], axis=-3)
+            #     else:
+            #         preprocessing = dict(mean=[0.4914, 0.4822, 0.4465], std=[0.247, 0.243, 0.261], axis=-3)
+            #     bounds = (0.0, 1.0)
+            #     try:
+            #         # pylance の警告を抑制する（# type: ignore を付与）
+            #         fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+            #         attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
+            #         # ここまでpylanceの警告を抑制する．
+            #         raw, clipped, is_adv = attack(fmodel, data_denorm, target, epsilons=self.cfg.epsilon)
+            #         # clipped は foolbox のバージョンにより単体のテンソルかリストになることがある
+            #         perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+            #     except Exception as e:
+            #         print(f"Foolbox BIM attack failed: {e}")
+            #     # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
+            #     # preprocessing = dict(mean=[0.1307], std=[0.3081])
+            #     # bounds = (-float("inf"), float("inf"))
+            #     # fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing,  device=self.device)
+            #     # attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha)
+            #     # raw, clipped, is_adv = attack(fmodel, data_denorm, target,  epsilons=0.03)
+            #     # # print("row data:", raw)
+            #     # # print("clipped:", clipped)
+            #     # # print(is_adv)
+            #     # perturbed = clipped
+            # elif self.cfg.attack == AttackKind.FGSM:
+            #     # FGSM は (image_denorm, epsilon, target, model, device) を想定
+            #     # perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
+            #     # モデル推論のために perturbed を正規化
+            #     perturbed = fgsm.fgsm_attack(
+            #         data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
+            #     )
             else:
                 raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
     
-            if data.dim() == 4 and data.size(1) == 1:
-                perturbed_norm = transforms.Normalize((0.1307,), (0.3081,))(perturbed)
-            else:
-                perturbed_norm = transforms.Normalize((0.4914, 0.4822, 0.4465),
-                                                      (0.247, 0.243, 0.261))(perturbed)
+            perturbed_norm = self.cfg.dataset_norm.normalize(perturbed)
+            print(f"original data average: {data.mean().item()}")
+            # print(f"perturbed_norm average: {perturbed_norm.mean().item()}")
+            print(f"perturbed average: {perturbed.mean().item()}")
+
+            average_perturbation = utils.l2_norm_perturbation(data, perturbed_norm)
 
             out2 = self.model(perturbed_norm)
             logits2 = self._to_logits(out2)
             pred2 = logits2.max(1, keepdim=True)[1]
 
-            mean_perturb = attacks____.mean_perturbation(data, perturbed)
-            adv_examples.append((i, pred.item(), pred2.item(), perturbed.squeeze().detach().cpu(), mean_perturb))
+            # mean_perturb = attacks____.mean_perturbation(data, perturbed)
+            print(f"average_perturbation: {average_perturbation}")
+
+
+            # print(f"mean_perturb {mean_perturb}")
+            adv_examples.append((i, pred.item(), pred2.item(), perturbed.squeeze().detach().cpu(), average_perturbation.item()))
         return adv_examples
     
 def parse_args() -> Config:
@@ -223,7 +243,8 @@ def parse_args() -> Config:
         alpha=args.alpha,
         iters=args.iters,
         batch_size=args.batch_size,
-        device=utils.get_device()
+        device=utils.get_device(),
+        dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device())
     )
 
     if args.preset:

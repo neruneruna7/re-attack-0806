@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, TypeAlias
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,12 +10,15 @@ import matplotlib.pyplot as plt
 import os
 from PIL import Image
 from torch import Tensor
+
+# 型別名
 from enum import Enum
 import argparse
 import lib
 from copy import deepcopy
 
 from lib.models import MorimotoCifar10, MorimotoMnist, Ploof
+from lib.utils.normTensor import DenormTensor, NormTensor
 
 
 class DatasetKind(str, Enum):
@@ -33,6 +36,8 @@ class AttackKind(str, Enum):
     BIM = "bim"
     FGSM = "fgsm"
     FOOLBOX_BIM = "foolbox_bim"
+
+
 
 class DatasetNorm:
     """データセット種別に基づく正規化/非正規化を行うユーティリティクラス。
@@ -60,13 +65,13 @@ class DatasetNorm:
         self.mean = torch.tensor(mean, device=self.device, dtype=self.dtype).view(1, -1, 1, 1)
         self.std = torch.tensor(std, device=self.device, dtype=self.dtype).view(1, -1, 1, 1)
 
-    def normalize(self, x: Tensor) -> Tensor:
-        """正規化を行う。入力は [B,C,H,W] を想定（必要なら .to(self.device) を呼ぶ）。"""
+    def normalize(self, x: DenormTensor) -> NormTensor:
+        """非正規化テンソルを受け取り、正規化テンソルを返す。"""
         x = x.to(self.device)
         return (x - self.mean) / self.std
 
-    def denormalize(self, x: Tensor) -> Tensor:
-        """非正規化（元のピクセル空間へ戻す）。"""
+    def denormalize(self, x: NormTensor) -> DenormTensor:
+        """正規化テンソルを受け取り、非正規化テンソルを返す。"""
         x = x.to(self.device)
         return x * self.std + self.mean
 

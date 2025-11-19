@@ -63,6 +63,7 @@ def mean_perturbation(original: Tensor, perturbed: Tensor) -> int | float | bool
     mean_perturb = torch.mean(perturbation).item()
     return mean_perturb
 
+
 def bim_attack(image: Tensor, epsilon: float, alpha: float, n: int, target: Tensor, model: nn.Module, device: torch.device) -> Tensor:
     """
     image: 非正規化されたテンソル [B,C,H,W] (値域 0..1)

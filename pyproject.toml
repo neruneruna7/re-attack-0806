@@ -12,3 +12,10 @@ dependencies = [
     "numpy",
     "foolbox>=3.3.4",
 ]
+
+[project.scripts]
+sample-project = "lib:main"
+
+[build-system]
+requires = ["uv_build>=0.8.3,<0.9.0"]
+build-backend = "uv_build"
