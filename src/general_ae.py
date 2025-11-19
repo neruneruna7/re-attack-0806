@@ -1,5 +1,6 @@
 # モデルをトレーニングする汎用コード
 from dataclasses import dataclass
+from torch.types import Number
 from typing import Any, Iterator, Optional, Tuple
 import torch
 import torch.nn as nn
@@ -77,14 +78,14 @@ class Runner:
             return output.view(output.size(0), output.size(1), -1).mean(dim=2)
         return output
     
-    def run(self) -> Iterator[Tuple[int, int, int, int, TensorWithState, float]]:
+    def run(self) -> Iterator[Tuple[int, Number, Number, Number, TensorWithState, Number]]:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
         self.model.eval()
 
         for i, (data, target) in tqdm(enumerate(self.test_loader)):
             if i >= 100:  # 最初の100サンプルのみを攻撃
                 break
-            print("1")
+            # print("1")
             data = data.to(self.device)
             data = TensorWithState(data, DENORMALIZED)
             data = self.cfg.dataset_norm.normalize(data)
@@ -97,9 +98,9 @@ class Runner:
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
-            print(f"\n[Debug] Index: {i}")
-            print(f"  Dataset Label (target): {target.item()}")
-            print(f"  Model Prediction (pred): {pred.item()}")
+            # print(f"\n[Debug] Index: {i}")
+            # print(f"  Dataset Label (target): {target.item()}")
+            # print(f"  Model Prediction (pred): {pred.item()}")
 
             # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
             # data_denorm = utils.denorm(data_grad, self.device)
@@ -261,7 +262,6 @@ def main():
         csv_writer.writerow(["index", "target_label", "prediction_before_attack", "prediction_after_attack", "l2_perturbation", "image_filepath"])
 
     for idx, target, before, after, ex, m in result_generator:
-        print("2")
         total += 1
         # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
         # ここでは以前のモデルの初期予測を用いて比較することを想定

@@ -152,7 +152,7 @@ def save_tensor_as_image(tensor: Tensor, path: str):
     img = Image.fromarray(arr_u8)
     img.save(path)
     info = f"saved image {path}"
-    print(info)
+    return info
 
 def l2_norm_perturbation(original: TensorWithState, perturbed: TensorWithState) -> Tensor:
     if original.state != perturbed.state:
