@@ -1,6 +1,6 @@
 # モデルをトレーニングする汎用コード
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from typing import Any, Iterator, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -77,14 +77,14 @@ class Runner:
             return output.view(output.size(0), output.size(1), -1).mean(dim=2)
         return output
     
-    def run(self) -> List[Tuple[int, int, int, int, TensorWithState, float]]:
+    def run(self) -> Iterator[Tuple[int, int, int, int, TensorWithState, float]]:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
         self.model.eval()
-        adv_examples = []
 
         for i, (data, target) in tqdm(enumerate(self.test_loader)):
-            # if i >= 100:  # 最初の100サンプルのみを攻撃
-            #     break
+            if i >= 100:  # 最初の100サンプルのみを攻撃
+                break
+            print("1")
             data = data.to(self.device)
             data = TensorWithState(data, DENORMALIZED)
             data = self.cfg.dataset_norm.normalize(data)
@@ -188,8 +188,7 @@ class Runner:
             # print(f"mean_perturb {mean_perturb}")
             denorm_perturbed = self.cfg.dataset_norm.denormalize(perturbed)
             denorm_perturbed = TensorWithState(denorm_perturbed.tensor.squeeze().detach().cpu(), DENORMALIZED)
-            adv_examples.append((i, target.item(), pred.item(), pred2.item(), denorm_perturbed, average_perturbation.item()))
-        return adv_examples
+            yield (i, target.item(), pred.item(), pred2.item(), denorm_perturbed, average_perturbation.item())
     
 def fraction_float(s: str) -> float:
     """
@@ -241,7 +240,7 @@ def parse_args() -> Config:
 def main():
     cfg = parse_args()
     runner = Runner(cfg)
-    result = runner.run()
+    result_generator = runner.run()
 
     # 統計を計算: 最初に正しく分類されていたサンプルのみを考慮
     fail = 0
@@ -261,7 +260,8 @@ def main():
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(["index", "target_label", "prediction_before_attack", "prediction_after_attack", "l2_perturbation", "image_filepath"])
 
-    for idx, target, before, after, ex, m in result:
+    for idx, target, before, after, ex, m in result_generator:
+        print("2")
         total += 1
         # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
         # ここでは以前のモデルの初期予測を用いて比較することを想定
