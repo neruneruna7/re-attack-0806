@@ -9,6 +9,7 @@ from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import csv
 from PIL import Image
 from torch import Tensor
 from enum import Enum
@@ -76,12 +77,14 @@ class Runner:
             return output.view(output.size(0), output.size(1), -1).mean(dim=2)
         return output
     
-    def run(self) -> List[Tuple[int, int, int, int, Tensor, float]]:
+    def run(self) -> List[Tuple[int, int, int, int, TensorWithState, float]]:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
         self.model.eval()
         adv_examples = []
 
         for i, (data, target) in tqdm(enumerate(self.test_loader)):
+            # if i >= 100:  # 最初の100サンプルのみを攻撃
+            #     break
             data = data.to(self.device)
             data = TensorWithState(data, DENORMALIZED)
             data = self.cfg.dataset_norm.normalize(data)
@@ -183,7 +186,9 @@ class Runner:
 
 
             # print(f"mean_perturb {mean_perturb}")
-            adv_examples.append((i, target.item(), pred.item(), pred2.item(), perturbed.tensor.squeeze().detach().cpu(), average_perturbation.item()))
+            denorm_perturbed = self.cfg.dataset_norm.denormalize(perturbed)
+            denorm_perturbed = TensorWithState(denorm_perturbed.tensor.squeeze().detach().cpu(), DENORMALIZED)
+            adv_examples.append((i, target.item(), pred.item(), pred2.item(), denorm_perturbed, average_perturbation.item()))
         return adv_examples
     
 def fraction_float(s: str) -> float:
@@ -243,6 +248,19 @@ def main():
     clean_acc_total = 0
     total = 0
     mean_mean_perturb = 0.0
+
+    # CSV保存の準備
+    dataset_name = cfg.dataset.value
+    attack_name = cfg.attack.value
+    output_folder = os.path.join(cfg.output_dir, dataset_name, attack_name, f"eps_{cfg.epsilon:.3f}")
+    os.makedirs(output_folder, exist_ok=True)
+    
+    csv_filename = os.path.join(output_folder, "attack_results.csv")
+    
+    with open(csv_filename, 'w', newline='') as csvfile:
+        csv_writer = csv.writer(csvfile)
+        csv_writer.writerow(["index", "target_label", "prediction_before_attack", "prediction_after_attack", "l2_perturbation", "image_filepath"])
+
     for idx, target, before, after, ex, m in result:
         total += 1
         # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
@@ -253,16 +271,10 @@ def main():
             if after != before:
                 fail += 1
 
+        output_filename = "" # 画像ファイルパスの初期化
         # 攻撃後の画像を保存する処理
         if cfg.save_attacked_images:
             # ex は perturbed.tensor.squeeze().detach().cpu() なので非正規化画像
-            # 保存先のディレクトリを作成
-            # 例: data/attacked_images/mnist/bim/eps_0.300/
-            dataset_name = cfg.dataset.value
-            attack_name = cfg.attack.value
-            output_folder = os.path.join(cfg.output_dir, dataset_name, attack_name, f"eps_{cfg.epsilon:.3f}")
-            os.makedirs(output_folder, exist_ok=True)
-            
             # ファイル名を構築
             # 例: data/attacked_images/mnist/bim/eps_0.300/idx_0_label_5.png
             output_filename = os.path.join(output_folder, f"idx_{idx}_label_{after}.png")
@@ -272,8 +284,13 @@ def main():
             # ex は既に非正規化されたテンソルなのでそのまま渡せる
             # ただし、保存はPNGで行うため、テンソルの状態は問わない
             # utils.save_tensor_as_image は `Tensor` を受け取るので `ex` をそのまま渡す
-            utils.save_tensor_as_image(ex, output_filename)
+            utils.save_tensor_as_image(ex.tensor, output_filename)
             # print(f"Saved attacked image to {output_filename}")
+        
+        # CSVに結果を追記
+        with open(csv_filename, 'a', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow([idx, target, before, after, m, output_filename])
 
 
     attack_acc = (fail / clean_acc_total) if clean_acc_total > 0 else 0.0
@@ -284,6 +301,7 @@ def main():
     print(f"平均摂動量(L2ノルム) = {mean_perturb}")
     print(f"クリーン画像を正しく分類したサンプル数: {clean_acc_total}")
     print(f"処理したサンプル総数: {total}")
+    print(f"結果は {csv_filename} に保存されました。")
 
     print("\n=== End of Attack Summary ===")
 
