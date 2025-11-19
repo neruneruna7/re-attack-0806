@@ -49,37 +49,82 @@ def train(data_loader, model: nn.Module, loss_fn, optimizer, device):
     return last_loss
 
 def test(dataloader, model: nn.Module, loss_fn, device):
-    size = len(dataloader.dataset)
+    """テストデータで評価し、(accuracy_percent, avg_loss) を返す。"""
     model.eval()
-    test_loss, correct = 0, 0
+    total_loss = 0.0
+    total_correct = 0.0
+    total_samples = 0
     with torch.no_grad():
         for X, y in dataloader:
             X, y = X.to(device), y.to(device)
             pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-    test_loss /= size
-    correct /= size
-    return ((100*correct), test_loss)
+            batch_size = X.size(0)
+            total_loss += loss_fn(pred, y).item() * batch_size
+            total_correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+            total_samples += batch_size
+
+    avg_loss = (total_loss / total_samples) if total_samples > 0 else 0.0
+    accuracy_percent = (total_correct / total_samples * 100.0) if total_samples > 0 else 0.0
+    return accuracy_percent, avg_loss
 
 
 def train_roop(model: nn.Module, loss_fn, optimizer, train_loader, test_loader, device, epochs: int):
-    """学習ループ。各 epoch の平均 loss を収集して返す。
+    """学習ループ。各 epoch の最終 loss とテスト指標を収集して返す。
 
     Returns:
-        epoch_losses: list[float] の各 epoch の平均 loss
+        data: list of tuples (train_final_loss, test_accuracy_percent, test_avg_loss)
     """
-    data = []
+    data: list[tuple[float, float, float]] = []
+
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
         epoch_final_loss = train(train_loader, model, loss_fn, optimizer, device)
         print(f"final loss: {epoch_final_loss:.6f}")
         accuracy, test_loss = test(test_loader, model, loss_fn, device)
         print(f"Test Error: \n Accuracy: {accuracy:>0.1f}%, Avg loss: {test_loss:>8f} \n")
+
         data.append((epoch_final_loss, accuracy, test_loss))
 
     print("Done!")
     return data
+
+
+def plot_training_progress(data: list[tuple[float, float, float]], out_path: str = './training_plot.png') -> None:
+    """与えられた学習結果データからプロットを作成して保存する。
+
+    Args:
+        data: list of tuples (train_final_loss, test_accuracy_percent, test_avg_loss)
+        out_path: 出力 PNG ファイルパス
+    """
+    if not data:
+        print("No training data to plot.")
+        return
+
+    epochs = len(data)
+    epochs_x = list(range(1, epochs + 1))
+    epoch_losses = [d[0] for d in data]
+    test_accuracies = [d[1] for d in data]
+    test_losses = [d[2] for d in data]
+
+    try:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), constrained_layout=True)
+        ax1.plot(epochs_x, epoch_losses, marker='o', label='epoch_final_loss')
+        ax1.plot(epochs_x, test_losses, marker='x', label='test_avg_loss')
+        ax1.set_xlabel('epoch')
+        ax1.set_ylabel('loss')
+        ax1.legend()
+
+        ax2.plot(epochs_x, test_accuracies, marker='s', color='tab:orange', label='test_accuracy(%)')
+        ax2.set_xlabel('epoch')
+        ax2.set_ylabel('accuracy (%)')
+        ax2.legend()
+
+        fig.suptitle('Training Progress')
+        fig.savefig(out_path)
+        plt.close(fig)
+        print(f"Saved training plot to {out_path}")
+    except Exception as e:
+        print(f"Failed to create training plot: {e}")
 
 def main():
     save_dir = "./weight"
@@ -110,7 +155,13 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=general_train_param.lr)
 
     # 学習ループを実行
-    train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, general_train_param.epochs)
+    results = train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, general_train_param.epochs)
+    # 結果に基づいてプロットを出力
+    plot_path = os.path.join("./assets", "training_plot.png")
+    try:
+        plot_training_progress(results, out_path=plot_path)
+    except Exception as e:
+        print(f"Failed to plot training progress: {e}")
 
 
     # モデルの保存
