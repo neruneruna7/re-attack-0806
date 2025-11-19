@@ -49,6 +49,12 @@ class Runner:
         self._load_weights_if_exists(cfg.model_dir)
 
     def _load_weights_if_exists(self, model_dir: str):
+        # model に model_name 属性が無ければ何もしないで戻る（Inception3 等の外部モデル対策）
+        model_name = getattr(self.model, "model_name", None)
+        if model_name is None:
+            # デバッグ用にクラス名を通知（必要ならここでフォールバック名を使う実装に差し替え可能）
+            print(f"warning: model has no 'model_name' attribute (model class: {self.model.__class__.__name__}), skipping weight load")
+            return None
         path = os.path.join(model_dir, f"{self.model.model_name}.pth")
         if os.path.exists(path):
             st = torch.load(path, map_location=self.device)
