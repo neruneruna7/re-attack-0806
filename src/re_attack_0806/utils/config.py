@@ -27,8 +27,8 @@ class DatasetKind(str, Enum):
     IMAGE_NET = "imagenet"
 
 class ModelKind(str, Enum):
-    MORIMOTO_MNIST = "mnist"
-    MORIMOTO_CIFAR10 = "cifar10"
+    MORIMOTO_MNIST = "morimoto-mnist"
+    MORIMOTO_CIFAR10 = "morimoto-cifar10"
     INCEPTION_V3 = "inception_v3"
     PLOOF = "ploof"
 

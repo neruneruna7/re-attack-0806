@@ -1,0 +1,14 @@
+[config]
+skip_core_tasks = true
+
+[tasks.train-morimoto-cifar10]
+description = "Train Morimoto model on CIFAR-10"
+category = "Training"
+command = "uv"
+args = ["run", "src/general_train.py", "--dataset", "cifar10", "--model", "morimoto-cifar10", "--epochs", "99", "--batch-size", "128", "--lr", "1e-2"]
+
+[tasks.train-morimoto-mnist]
+description = "Train Morimoto model on MNIST"
+category = "Training"
+command = "uv"
+args = ["run", "src/general_train.py", "--dataset", "mnist", "--model", "morimoto-mnist", "--epochs", "99", "--batch-size", "128", "--lr", "1e-4"]
