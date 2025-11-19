@@ -5,6 +5,8 @@ import torch.nn.functional as F
 import torch.nn as nn
 from torch import Tensor
 
+from re_attack_0806.utils.normTensor import *
+
 
 def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor]:
     """チャネル数に応じた既定の平均 / 標準偏差を返す（MNIST / CIFAR を想定）。
@@ -20,52 +22,56 @@ def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -
     return mean, std
 
 
-def fgsm_attack(image: Tensor, epsilon: float, target: Tensor, model: nn.Module, device: torch.device, *,
-                mean: Optional[Tensor] = None, std: Optional[Tensor] = None) -> Tensor:
-    """One-step FGSM attack.
+def _to_norm_eps(epsilon: float, std_t: Tensor) -> Tensor:
+    """ピクセル空間の epsilon を正規化空間のテンソルに変換する。
 
-    Args:
-        image: 非正規化された入力テンソル [B,C,H,W], 値域 0..1
-        epsilon: ピクセルスケールでの摂動量
-        target: 正解ラベルテンソル ([B])
-        model: PyTorch モデル
-        device: 実行デバイス
-        mean, std: 正規化用の平均 / 標準偏差（テンソル、形状 [1,C,1,1]）。指定しない場合はチャネル数に応じた既定値を使用。
-
-    Returns:
-        perturbed: 非正規化された摂動後テンソル（detach され clamp 済み）
+    戻り値は `std_t` と同じ形 [1,C,1,1] のテンソル。
     """
-    # コピーしてデバイスに移す（純粋関数に近づけるためオブジェクトを変更しない）
-    image_denorm = image.clone().detach().to(device)
+    return torch.tensor(epsilon, device=std_t.device, dtype=std_t.dtype) / std_t
 
-    B, C, H, W = image_denorm.shape
-    if mean is None or std is None:
-        mean_t, std_t = _default_mean_std(C, device, image_denorm.dtype)
+
+def fgsm(input_norm: NormTensor,
+              eps_norm: float | Tensor,
+              target: Tensor,
+              eval_model: nn.Module,
+              device: torch.device,
+              *,
+              orig_norm: Optional[NormTensor] = None) -> NormTensor:
+    """FGSM のコア（正規化空間での実装）。
+
+    - `input_norm`: 正規化済みテンソルを持つ `NormTensor`。
+    - `eps_norm`: 正規化空間での摂動許容量（スカラーまたはテンソル）。
+    - `orig_norm`: クリップの基準（再攻撃時に使用）、未指定なら `input_norm` を基準とする。
+    """
+    input_norm_inner = input_norm.tensor.clone().detach().to(device)
+    if orig_norm is None:
+        orig_norm_inner = input_norm.tensor.clone().detach().to(device)
     else:
-        mean_t = mean.to(device).view(1, -1, 1, 1)
-        std_t = std.to(device).view(1, -1, 1, 1)
+        orig_norm_inner = orig_norm.tensor.clone().detach().to(device)
 
-    # 正規化した入力をrequires_grad True の leaf として用意
-    image_norm = (image_denorm - mean_t) / std_t
-    image_norm = image_norm.clone().detach().requires_grad_(True)
+    if target is not None:
+        target = target.to(device)
+        if target.dim() == 0:
+            target = target.unsqueeze(0)
+        target = target.long()
 
-    model.zero_grad()
-    outputs = model(image_norm)
+    # eps_norm をテンソル化
+    if not isinstance(eps_norm, Tensor):
+        eps_norm = torch.tensor(eps_norm, device=input_norm_inner.device, dtype=input_norm_inner.dtype)
+
+    req = input_norm_inner.clone().detach().requires_grad_(True)
+    outputs = eval_model(req)
     loss = F.cross_entropy(outputs, target)
-    loss.backward()
 
-    grad_norm = image_norm.grad
+    grad_norm = torch.autograd.grad(loss, req, retain_graph=False, create_graph=False)[0]
     if grad_norm is None:
-        raise RuntimeError("FGSM: gradient is None. Ensure model was called with requires_grad input.")
+        raise RuntimeError("fgsm_norm: gradient is None")
 
-    # 正規化空間の勾配 -> ピクセル空間の勾配
-    grad_pixel = grad_norm / std_t
+    perturbed_norm = (input_norm_inner + eps_norm * grad_norm.sign()).detach()
 
-    sign_grad = grad_pixel.sign()
-    perturbed = image_denorm + epsilon * sign_grad
-    perturbed = torch.clamp(perturbed, 0.0, 1.0).detach()
+    # delta を clamp（orig を基準）
+    delta = perturbed_norm - orig_norm_inner
+    delta = torch.max(torch.min(delta, eps_norm), -eps_norm)
+    perturbed_norm = (orig_norm_inner + delta).detach()
 
-    # クリーンアップ
-    image_norm.grad = None
-
-    return perturbed
+    return NormTensor(perturbed_norm, input_norm.state)

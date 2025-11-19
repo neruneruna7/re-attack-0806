@@ -30,6 +30,7 @@ from re_attack_0806.utils.normTensor import *
 
 class PresetKind(str, Enum):
     MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
+    MORIMOTO_MNIST_FGSM = "morimoto_mnist_fgsm"
     SAMPLE_PLOOF = "sample_ploof"
     BIM_ADVO = "bim_advo"
     DEFAULT = "default"
@@ -48,6 +49,14 @@ PRESETS = {
         "n": 10,
         "batch_size": 1,
     },
+    PresetKind.MORIMOTO_MNIST_FGSM: {
+        "dataset": DatasetKind.MNIST,
+        "model": ModelKind.MORIMOTO_MNIST,
+        "attack": AttackKind.FGSM,
+        "epsilon": 0.3,
+        "batch_size": 1,
+    },
+
     PresetKind.SAMPLE_PLOOF: {
         "dataset": DatasetKind.MNIST,
         "model": ModelKind.PLOOF,
@@ -144,10 +153,11 @@ class Runner:
                 print(f"skip idx {i}: no grad")
                 continue
             data_grad = grad.data
+            data_grad = TensorWithState(data_grad, NORMALIZED)
 
             # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
             # data_denorm = utils.denorm(data_grad, self.device)
-            data_denorm = self.cfg.dataset_norm.denormalize(data_grad)
+            # data_denorm = self.cfg.dataset_norm.denormalize(data_grad)
     
             # 攻撃実行
 
@@ -155,9 +165,9 @@ class Runner:
                 # lib.attacks の内部実装である bim_attack を使用
                 # perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
                 #                            target, self.model, self.device)
-                print(f"data_denorm shape: {data_denorm.shape}")
+                # print(f"data_denorm shape: {data_grad.tensor.shape}")
                 perturbed = bim.bim(
-                    data_denorm,
+                    data_grad,
                     target,
                     self.model,
                     self.device,
@@ -165,7 +175,7 @@ class Runner:
                     self.cfg.alpha,
                     self.cfg.n,
                 )
-                print(f"perturbed shape: {perturbed.shape}")
+                # print(f"perturbed shape: {perturbed.tensor.shape}")
             # elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
             #     # Foolbox による Linf Basic Iterative Attack を使用
             #     # チャンネル数に応じた前処理パラメータを準備
@@ -194,33 +204,35 @@ class Runner:
             #     # # print("clipped:", clipped)
             #     # # print(is_adv)
             #     # perturbed = clipped
-            # elif self.cfg.attack == AttackKind.FGSM:
-            #     # FGSM は (image_denorm, epsilon, target, model, device) を想定
-            #     # perturbed = attacks.fgsm_attack(data_denorm, self.cfg.epsilon, target)
-            #     # モデル推論のために perturbed を正規化
-            #     perturbed = fgsm.fgsm_attack(
-            #         data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
-            #     )
+            elif self.cfg.attack == AttackKind.FGSM:
+                # FGSM は (image_denorm, epsilon, target, model, device) を想定
+                perturbed = fgsm.fgsm(data_grad, self.cfg.epsilon, target, self.model, self.device)
+                # モデル推論のために perturbed を正規化
+                # perturbed = fgsm.fgsm_attack(
+                #     data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
+                # )
             else:
                 raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
     
-            perturbed_norm = self.cfg.dataset_norm.normalize(perturbed)
-            print(f"original data average: {data.mean().item()}")
-            # print(f"perturbed_norm average: {perturbed_norm.mean().item()}")
-            print(f"perturbed average: {perturbed.mean().item()}")
+            # # perturbed_norm = self.cfg.dataset_norm.normalize(perturbed)
+            # print(f"original data average: {data.tensor.mean().item()}")
+            # # print(f"perturbed_norm average: {perturbed_norm.mean().item()}")
+            # print(f"perturbed average: {perturbed.tensor.mean().item()}")
 
-            average_perturbation = utils.l2_norm_perturbation(data, perturbed_norm)
+            average_perturbation = utils.l2_norm_perturbation(
+                self.cfg.dataset_norm.denormalize(data), 
+                self.cfg.dataset_norm.denormalize(perturbed))
 
-            out2 = self.model(perturbed_norm)
+            out2 = self.model(perturbed.tensor)
             logits2 = self._to_logits(out2)
             pred2 = logits2.max(1, keepdim=True)[1]
 
             # mean_perturb = attacks____.mean_perturbation(data, perturbed)
-            print(f"average_perturbation: {average_perturbation}")
+            # print(f"average_perturbation: {average_perturbation}")
 
 
             # print(f"mean_perturb {mean_perturb}")
-            adv_examples.append((i, pred.item(), pred2.item(), perturbed.squeeze().detach().cpu(), average_perturbation.item()))
+            adv_examples.append((i, pred.item(), pred2.item(), perturbed.tensor.squeeze().detach().cpu(), average_perturbation.item()))
         return adv_examples
     
 def parse_args() -> Config:

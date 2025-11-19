@@ -8,6 +8,8 @@ import numpy as np
 from torch import Tensor
 from torchvision import transforms
 
+from re_attack_0806.utils.normTensor import TensorWithState
+
 
 def get_device() -> torch.device:
     accelerator = torch.device("cpu")
@@ -152,9 +154,11 @@ def save_tensor_as_image(tensor: Tensor, path: str):
     info = f"saved image {path}"
     print(info)
 
-def l2_norm_perturbation(original: Tensor, perturbed: Tensor) -> Tensor:
-    delta = perturbed - original
-    print(f"delta average: {torch.mean(delta)}, delta min: {torch.min(delta)}, delta max: {torch.max(delta)}")
+def l2_norm_perturbation(original: TensorWithState, perturbed: TensorWithState) -> Tensor:
+    if original.state != perturbed.state:
+        raise ValueError("original and perturbed tensors must have the same state")
+    delta = perturbed.tensor - original.tensor
+    # print(f"delta average: {torch.mean(delta)}, delta min: {torch.min(delta)}, delta max: {torch.max(delta)}")
 
     # delta = delta.view(delta.size(0), -1)  # flatten
     # l2_norms = torch.linalg.norm(delta, dim=(1,2,3), p=2)  # バッチ内の各サンプルのL2ノルムを計算
