@@ -37,7 +37,46 @@ class AttackKind(str, Enum):
     FGSM = "fgsm"
     FOOLBOX_BIM = "foolbox_bim"
 
+@dataclass
+class FGSMAttackParam:
+    epsilon: float = 0.3
+    batch_size: int = 1
 
+@dataclass
+class BIMAttackParam:
+    epsilon: float = 0.3
+    alpha: float = 0.05
+    iters: int = 10
+    batch_size: int = 1
+
+
+from typing import Type
+
+
+class AttackParamKind(Enum):
+    """攻撃ごとのパラメータ型を列挙する Enum。
+
+    各メンバの値は (value_str, ParamClass) のタプルで、`.default()` で初期値インスタンスを取得できます。
+    """
+    FGSM = ("fgsm", FGSMAttackParam)
+    BIM = ("bim", BIMAttackParam)
+    FOOLBOX_BIM = ("foolbox_bim", BIMAttackParam)
+
+    @property
+    def param_class(self) -> Type:
+        return self.value[1]
+
+    def default(self):
+        """この攻撃のデフォルトパラメータのインスタンスを返す。"""
+        return self.value[1]()
+
+
+# AttackKind -> AttackParamKind のマッピング（必要に応じて利用）
+ATTACK_KIND_TO_PARAM: dict[AttackKind, AttackParamKind] = {
+    AttackKind.FGSM: AttackParamKind.FGSM,
+    AttackKind.BIM: AttackParamKind.BIM,
+    AttackKind.FOOLBOX_BIM: AttackParamKind.FOOLBOX_BIM,
+}
 
 class DatasetNorm:
     """データセット種別に基づく正規化/非正規化を行うユーティリティクラス。

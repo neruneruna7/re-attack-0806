@@ -103,7 +103,7 @@ class Runner:
         self.cfg = cfg
         self.device = cfg.device or utils.get_device()
         self.model = ModelFactory.create(cfg.model, self.device)
-        self.test_loader = DataFactory.loader(cfg.dataset, cfg.batch_size)
+        self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
         self._load_weights_if_exists(cfg.model_dir)
 
     def _load_weights_if_exists(self, model_dir: str):

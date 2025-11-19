@@ -129,23 +129,23 @@ def plot_training_progress(data: list[tuple[float, float, float]], out_path: str
 def main():
     save_dir = "./weight"
 
-    mnist_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-4, save_weight_dir=save_dir)
-    general_train_param = mnist_train_param
+    # mnist_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-4, save_weight_dir=save_dir)
+    # general_train_param = mnist_train_param
 
-    # cifar10_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-2, save_weight_dir=save_dir)
-    # general_train_param = cifar10_train_param
+    cifar10_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-2, save_weight_dir=save_dir)
+    general_train_param = cifar10_train_param
 
     # DataFactory を使ってデータローダを生成（config.py に定義された変換と正規化を利用）
-    train_loader = DataFactory.loader(DatasetKind.MNIST, train=True, batch_size=mnist_train_param.batch_size)
-    test_loader = DataFactory.loader(DatasetKind.MNIST, train=False, batch_size=mnist_train_param.batch_size)
+    train_loader = DataFactory.loader(DatasetKind.CIFAR10, train=True, batch_size=cifar10_train_param.batch_size)
+    test_loader = DataFactory.loader(DatasetKind.CIFAR10, train=False, batch_size=cifar10_train_param.batch_size)
     
     device = utils.get_device()
     
     print(f"Using {device} device")
 
 
-    model = MorimotoMnist.MnistNet().to(device)
-    # model = MorimotoCifar10.Cifar10Net().to(device)
+    # model = MorimotoMnist.MnistNet().to(device)
+    model = MorimotoCifar10.Cifar10Net().to(device)
     print(model)
 
 
