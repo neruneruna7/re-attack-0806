@@ -12,10 +12,16 @@ def bim(input_norm: NormTensor,
         target: Tensor,
         eval_model: nn.Module,
         device: torch.device,
-        eps_norm: float | Tensor,
-        alpha_norm: float | Tensor,
+        eps: float,
+        alpha: float,
         num_iter: int,
+        mean_t: Tensor,
+        std_t: Tensor,
         *,
+        # 画像の値域クリップ用パラメータ
+        # 画像（正規化後）の最小値・最大値は，0から1に収まるため
+        min_val: float = 0.0, 
+        max_val: float = 1.0, 
         orig_norm: Optional[NormTensor] = None) -> NormTensor:
     """汎用 BIM 実装（正規化空間）。
 
@@ -33,6 +39,12 @@ def bim(input_norm: NormTensor,
     else:
         orig_norm_inner = orig_norm.tensor.clone().detach().to(device)
 
+    eps_norm = eps / std_t
+    alpha_norm = alpha / std_t
+
+    min_val_norm = (min_val - mean_t) / std_t
+    max_val_norm = (max_val - mean_t) / std_t
+
     # ターゲット整形
     if target is not None:
         target = target.to(device)
@@ -43,10 +55,6 @@ def bim(input_norm: NormTensor,
     loss_fn = nn.CrossEntropyLoss()
 
     # eps_norm / alpha_norm をテンソル化してブロードキャスト可能にする
-    if not isinstance(eps_norm, Tensor):
-        eps_norm = torch.tensor(eps_norm, device=perturbed_norm.device, dtype=perturbed_norm.dtype)
-    if not isinstance(alpha_norm, Tensor):
-        alpha_norm = torch.tensor(alpha_norm, device=perturbed_norm.device, dtype=perturbed_norm.dtype)
 
     for _ in range(num_iter):
         req = perturbed_norm.clone().detach().requires_grad_(True)
@@ -62,8 +70,12 @@ def bim(input_norm: NormTensor,
         # delta を elementwise に clamp する（eps_norm はテンソルでもスカラーでも対応）
         # 最終的に摂動の大きさをepsilonで制限する
         delta = perturbed_norm - orig_norm_inner
-        delta = torch.max(torch.min(delta, eps_norm), -eps_norm)
+        delta = torch.clamp(delta, -eps_norm, eps_norm)
         perturbed_norm = (orig_norm_inner + delta).detach()
+        # --- 追加: 画像の値域クリップ (Domain Constraint) ---
+        # ※ NormTensorが正規化されている場合、min/max_valも正規化後の値を渡す必要がある
+        perturbed_norm = torch.clamp(perturbed_norm, min=min_val_norm, max=max_val_norm)
+        # ------------------------------------------------
     return NormTensor(perturbed_norm, input_norm.state)
 
 def _to_norm_params(epsilon: float, alpha: float, std_t: Tensor) -> tuple[Tensor, Tensor]:

@@ -158,7 +158,6 @@ def l2_norm_perturbation(original: TensorWithState, perturbed: TensorWithState) 
     if original.state != perturbed.state:
         raise ValueError("original and perturbed tensors must have the same state")
     delta = perturbed.tensor - original.tensor
-    # print(f"delta average: {torch.mean(delta)}, delta min: {torch.min(delta)}, delta max: {torch.max(delta)}")
 
     # delta = delta.view(delta.size(0), -1)  # flatten
     # l2_norms = torch.linalg.norm(delta, dim=(1,2,3), p=2)  # バッチ内の各サンプルのL2ノルムを計算

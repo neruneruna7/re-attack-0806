@@ -35,7 +35,8 @@ class ModelKind(str, Enum):
 class AttackKind(str, Enum):
     BIM = "bim"
     FGSM = "fgsm"
-    FOOLBOX_BIM = "foolbox_bim"
+    FOOLBOX_BIM = "foolbox-bim"
+    LINF_BIM = "linf-bim"
 
 @dataclass
 class FGSMAttackParam:
@@ -76,6 +77,7 @@ ATTACK_KIND_TO_PARAM: dict[AttackKind, AttackParamKind] = {
     AttackKind.FGSM: AttackParamKind.FGSM,
     AttackKind.BIM: AttackParamKind.BIM,
     AttackKind.FOOLBOX_BIM: AttackParamKind.FOOLBOX_BIM,
+    AttackKind.LINF_BIM: AttackParamKind.BIM,
 }
 
 class DatasetNorm:
@@ -139,22 +141,17 @@ class DataFactory:
         if kind == DatasetKind.MNIST:
             transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.1307,), (0.3081,))
             ])
             ds = datasets.MNIST('../data', train=train, download=True, transform=transform)
         elif kind == DatasetKind.CIFAR10:
             transform = transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465),
-                                     (0.247, 0.243, 0.261))
             ])
             ds = datasets.CIFAR10('../data', train=train, download=True, transform=transform)
         elif kind == DatasetKind.IMAGE_NET:
             transform = transforms.Compose([
                 transforms.Resize((224, 224)),
                 transforms.ToTensor(),
-                transforms.Normalize((0.485, 0.456, 0.406),
-                                     (0.229, 0.224, 0.225))
             ])
             # torchvision.datasets.ImageNet は devkit（ILSVRC2012_devkit_t12.tar.gz）や
             # 画像アーカイブが所定の場所にないと RuntimeError を投げることがある。
