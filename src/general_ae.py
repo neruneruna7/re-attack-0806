@@ -82,40 +82,30 @@ class Runner:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
         self.model.eval()
 
+        global_idx = 0
         for i, (data, target) in tqdm(enumerate(self.test_loader)):
-            if i >= 100:  # 最初の100サンプルのみを攻撃
-                break
-            # print("1")
-            data = data.to(self.device)
-            data = TensorWithState(data, DENORMALIZED)
-            data = self.cfg.dataset_norm.normalize(data)
-
-            target: Tensor = target.to(self.device).view(-1).long()
+            # # デバッグ用に処理するサンプル数を100に制限
+            # if global_idx >= 100:
+            #     break
             
+            current_batch_size = data.shape[0]
 
-            # 順伝播
-            output = self.model(data.tensor)
+            # `data` テンソルを TensorWithState にラップして正規化
+            data_ts = TensorWithState(data.to(self.device), DENORMALIZED)
+            data_ts_norm = self.cfg.dataset_norm.normalize(data_ts)
+
+            target_ts: Tensor = target.to(self.device).view(-1).long()
+            
+            # 順伝播（攻撃前）
+            output = self.model(data_ts_norm.tensor)
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
-            # print(f"\n[Debug] Index: {i}")
-            # print(f"  Dataset Label (target): {target.item()}")
-            # print(f"  Model Prediction (pred): {pred.item()}")
-
-            # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
-            # data_denorm = utils.denorm(data_grad, self.device)
-            # data_denorm = self.cfg.dataset_norm.denormalize(data_grad)
-    
             # 攻撃実行
-
             if self.cfg.attack == AttackKind.BIM:
-                # lib.attacks の内部実装である bim_attack を使用
-                # perturbed = bim.bim_attack(data_denorm, self.cfg.epsilon, self.cfg.alpha, self.cfg.n,
-                #                            target, self.model, self.device)
-                # print(f"data_denorm shape: {data_grad.tensor.shape}")
                 perturbed = bim.bim(
-                    data,
-                    target,
+                    data_ts_norm,
+                    target_ts,
                     self.model,
                     self.device,
                     self.cfg.epsilon,
@@ -124,72 +114,53 @@ class Runner:
                     self.cfg.dataset_norm.mean,
                     self.cfg.dataset_norm.std,
                 )
-                # print(f"perturbed shape: {perturbed.tensor.shape}")
             elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                # Foolbox による Linf Basic Iterative Attack を使用
                 preprocessing = dict(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010], axis=-3)
                 bounds = (0.0, 1.0)
                 try:
-                    # pylance の警告を抑制する（# type: ignore を付与）
                     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-                    print("fmodel created")
                     attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
-                    print("attack created")
-                    # ここまでpylanceの警告を抑制する．
-                    # denormData = self.cfg.dataset_norm.denormalize(data)
-                    raw, clipped, is_adv = attack(fmodel, data.tensor, target, epsilons=self.cfg.epsilon)
-                    print("attack executed")
-                    # clipped は foolbox のバージョンにより単体のテンソルかリストになることがある
+                    raw, clipped, is_adv = attack(fmodel, data_ts_norm.tensor, target_ts, epsilons=self.cfg.epsilon)
                     __perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-
-
                     perturbed = TensorWithState(__perturbed, NORMALIZED)
                 except Exception as e:
                     print(f"Foolbox BIM attack failed: {e}")
                     continue
-                # preprocessing = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], axis=-3)
-                # preprocessing = dict(mean=[0.1307], std=[0.3081])
-                # bounds = (-float("inf"), float("inf"))
-                # fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing,  device=self.device)
-                # attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha)
-                # raw, clipped, is_adv = attack(fmodel, data_denorm, target,  epsilons=0.03)
-                # # print("row data:", raw)
-                # # print("clipped:", clipped)
-                # # print(is_adv)
-                # perturbed = clipped
-            # elif self.cfg.attack == AttackKind.LINF_BIM:
-            #     # Linf BIM を自前実装で実行
-            #     perturbed = linfbim.linf_bim_attack_with_normalization(
-            #         self.model, da
-            #     )
             elif self.cfg.attack == AttackKind.FGSM:
-                # FGSM は (image_denorm, epsilon, target, model, device) を想定
-                perturbed = fgsm.fgsm(data, self.cfg.epsilon, target, self.model, self.device)
+                perturbed = fgsm.fgsm(data_ts_norm, self.cfg.epsilon, target_ts, self.model, self.device)
             else:
                 raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
-    
-            # # perturbed_norm = self.cfg.dataset_norm.normalize(perturbed)
-            # print(f"original data average: {data.tensor.mean().item()}")
-            # # print(f"perturbed_norm average: {perturbed_norm.mean().item()}")
-            # print(f"perturbed average: {perturbed.tensor.mean().item()}")
 
-            average_perturbation = utils.l2_norm_perturbation(
-                self.cfg.dataset_norm.denormalize(data), 
-                self.cfg.dataset_norm.denormalize(perturbed))
-            # average_perturbation = utils.l2_norm_perturbation(data, perturbed)
-
+            # 順伝播（攻撃後）
             out2 = self.model(perturbed.tensor)
             logits2 = self._to_logits(out2)
             pred2 = logits2.max(1, keepdim=True)[1]
 
-            # mean_perturb = attacks____.mean_perturbation(data, perturbed)
-            # print(f"average_perturbation: {average_perturbation}")
+            # 摂動の計算（バッチ対応）
+            denormalized_data = self.cfg.dataset_norm.denormalize(data_ts_norm)
+            denormalized_perturbed = self.cfg.dataset_norm.denormalize(perturbed)
+            
+            # バッチ内の各サンプルのL2ノルムを計算
+            perturbation_batch = denormalized_perturbed.tensor - denormalized_data.tensor
+            l2_perturbations = torch.linalg.norm(perturbation_batch.view(current_batch_size, -1), ord=2, dim=1)
 
-
-            # print(f"mean_perturb {mean_perturb}")
-            denorm_perturbed = self.cfg.dataset_norm.denormalize(perturbed)
-            denorm_perturbed = TensorWithState(denorm_perturbed.tensor.squeeze().detach().cpu(), DENORMALIZED)
-            yield (i, target.item(), pred.item(), pred2.item(), denorm_perturbed, average_perturbation.item())
+            # バッチ内の各サンプルについて結果をyield
+            for j in range(current_batch_size):
+                # 制限を超えたらループを抜ける
+                if global_idx >= 100:
+                    break
+                
+                perturbed_sample_denorm = TensorWithState(denormalized_perturbed.tensor[j].detach().cpu(), DENORMALIZED)
+                
+                yield (
+                    global_idx,
+                    target_ts[j].item(),
+                    pred.view(-1)[j].item(),
+                    pred2.view(-1)[j].item(),
+                    perturbed_sample_denorm,
+                    l2_perturbations[j].item()
+                )
+                global_idx += 1
     
 def fraction_float(s: str) -> float:
     """
