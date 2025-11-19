@@ -10,10 +10,11 @@ import matplotlib.pyplot as plt
 import os
 from PIL import Image
 from torch import Tensor
-import lib
+import re_attack_0806
 
-from lib import utils
-from lib.models import MorimotoMnist, MorimotoCifar10
+from re_attack_0806 import utils
+from re_attack_0806.utils.config import DataFactory, DatasetKind
+from re_attack_0806.models import MorimotoMnist, MorimotoCifar10
 
 class TrainParam:
     def __init__(self, epochs: int = 10, batch_size: int = 128, lr: float = 1e-2, save_weight_dir: str = "./weight"):
@@ -72,31 +73,10 @@ def main():
     # cifar10_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-2, save_weight_dir=save_dir)
     # general_train_param = cifar10_train_param
 
-    train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True, transform=transforms.Compose([
-            transforms.ToTensor(),
-            ])),
-        batch_size=mnist_train_param.batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
-            transforms.ToTensor(),
-            ])),
-        batch_size=mnist_train_param.batch_size, shuffle=True)
+    # DataFactory を使ってデータローダを生成（config.py に定義された変換と正規化を利用）
+    train_loader = DataFactory.loader(DatasetKind.MNIST, batch_size=mnist_train_param.batch_size)
+    test_loader = DataFactory.loader(DatasetKind.MNIST, batch_size=mnist_train_param.batch_size)
     
-    # # CIFAR-10データセットの読み込み
-    # train_loader = torch.utils.data.DataLoader(
-    # datasets.CIFAR10('../data', train=True, download=True, transform=transforms.Compose([
-    #         transforms.ToTensor(),
-    #         # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    #         ])),
-    #     batch_size=cifar10_train_param.batch_size, shuffle=True)
-    # test_loader = torch.utils.data.DataLoader(
-    # datasets.CIFAR10('../data', train=False, download=True, transform=transforms.Compose([
-    #         transforms.ToTensor(),
-    #         # transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-    #         ])),
-    #     batch_size=cifar10_train_param.batch_size, shuffle=True)  
-
     device = utils.get_device()
     
     print(f"Using {device} device")
@@ -115,7 +95,7 @@ def main():
     # 学習ループを実行
     train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, general_train_param.epochs)
 
-    # test(test_loader, model, loss_fn, device)
+    test(test_loader, model, loss_fn, device)
 
 
     # モデルの保存
