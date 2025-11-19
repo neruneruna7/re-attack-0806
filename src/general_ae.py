@@ -37,6 +37,8 @@ class Config:
     batch_size: int = 1
     device: Optional[torch.device] = None
     dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
+    save_attacked_images: bool = True # 攻撃後の画像を保存するかどうかのフラグ
+    output_dir: str = "data/attacked_images" # 保存先ディレクトリ
 
 class Runner:
     def __init__(self, cfg: Config):
@@ -75,7 +77,7 @@ class Runner:
             data = data.to(self.device)
             data = TensorWithState(data, DENORMALIZED)
             data = self.cfg.dataset_norm.normalize(data)
-            # data = self.cfg.dataset_norm.normalize(data)
+
             target: Tensor = target.to(self.device).view(-1).long()
             
 
@@ -84,17 +86,6 @@ class Runner:
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
-            # # 損失と勾配を計算
-            # loss = F.cross_entropy(logits, target)
-            # self.model.zero_grad()
-            # loss.backward()
-            # grad = data.tensor.grad
-            # if grad is None:
-            #     # スキップして続行（デバッグ用にログを残しても良い）
-            #     print(f"skip idx {i}: no grad")
-            #     continue
-            # data_grad = grad.data
-            # data_grad = TensorWithState(data_grad, NORMALIZED)
 
             # 必要なら勾配を逆正規化（utils.denorm の期待値に合わせる）
             # data_denorm = utils.denorm(data_grad, self.device)
@@ -159,10 +150,6 @@ class Runner:
             elif self.cfg.attack == AttackKind.FGSM:
                 # FGSM は (image_denorm, epsilon, target, model, device) を想定
                 perturbed = fgsm.fgsm(data, self.cfg.epsilon, target, self.model, self.device)
-                # モデル推論のために perturbed を正規化
-                # perturbed = fgsm.fgsm_attack(
-                #     data_denorm, self.cfg.epsilon, data_grad, self.model, self.device
-                # )
             else:
                 raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
     
@@ -198,6 +185,10 @@ def parse_args() -> Config:
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--n", type=int, default=10, help="number of iterations for BIM")
     parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--save-attacked-images", action="store_true",
+                        help="Save attacked images to specified output directory")
+    parser.add_argument("--output-dir", type=str, default="data/attacked_images",
+                        help="Directory to save attacked images")
     args = parser.parse_args()
     cfg = Config(
         dataset=DatasetKind(args.dataset),
@@ -209,7 +200,9 @@ def parse_args() -> Config:
         n=args.n,
         batch_size=args.batch_size,
         device=utils.get_device(),
-        dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device())
+        dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device()),
+        save_attacked_images=args.save_attacked_images,
+        output_dir=args.output_dir
     )
     return cfg
 
@@ -223,12 +216,34 @@ def main():
     total = 0
     mean_mean_perturb = 0.0
     for idx, before, after, ex, m in result:
-    # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
-    # ここでは以前のモデルの初期予測を用いて比較することを想定
+        # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
+        # ここでは以前のモデルの初期予測を用いて比較することを想定
         total += 1
         mean_mean_perturb += m
         if after != before:
             fail += 1
+
+        # 攻撃後の画像を保存する処理
+        if cfg.save_attacked_images:
+            # ex は perturbed.tensor.squeeze().detach().cpu() なので非正規化画像
+            # 保存先のディレクトリを作成
+            # 例: data/attacked_images/eps_0.300/
+            output_folder = os.path.join(cfg.output_dir, f"eps_{cfg.epsilon:.3f}")
+            os.makedirs(output_folder, exist_ok=True)
+            
+            # ファイル名を構築
+            # 例: data/attacked_images/eps_0.300/idx_0_label_5.png
+            # utils.from_filename が .png を想定しているので .png で保存
+            output_filename = os.path.join(output_folder, f"idx_{idx}_label_{after}.png")
+            
+            # utils.save_tensor_as_image を使用
+            # save_tensor_as_image はテンソルを0-1にクリップしてuint8に変換
+            # ex は既に非正規化されたテンソルなのでそのまま渡せる
+            # ただし、保存はPNGで行うため、テンソルの状態は問わない
+            # utils.save_tensor_as_image は `Tensor` を受け取るので `ex` をそのまま渡す
+            utils.save_tensor_as_image(ex, output_filename)
+            print(f"Saved attacked image to {output_filename}")
+
 
     attack_acc = (fail / total) if total > 0 else 0.0
     mean_perturb = (mean_mean_perturb / total) if total > 0 else 0.0

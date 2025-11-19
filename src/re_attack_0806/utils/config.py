@@ -157,8 +157,7 @@ class DataFactory:
             # 画像アーカイブが所定の場所にないと RuntimeError を投げることがある。
             # その場合はローカルに展開済みの val ディレクトリを ImageFolder で読み込むフォールバックを行う。
             try:
-                ds = datasets.ImageNet('../data/image_net', split='val', transform=transform)
-                # ds = datasets.ImageFolder('../data/image_net/ILSVRC2012_img_val', transform=transform)
+                ds = datasets.ImageFolder('./data/image_net/ILSVRC2012_img_val', transform=transform)
             except RuntimeError as e:
                 # 典型的なエラーメッセージ例:
                 # "The archive ILSVRC2012_devkit_t12.tar.gz is not present in the root directory or is corrupted."
