@@ -29,7 +29,7 @@ class DatasetKind(str, Enum):
 class ModelKind(str, Enum):
     MORIMOTO_MNIST = "morimoto-mnist"
     MORIMOTO_CIFAR10 = "morimoto-cifar10"
-    INCEPTION_V3 = "inception_v3"
+    INCEPTION_V3 = "inception-v3"
     PLOOF = "ploof"
 
 class AttackKind(str, Enum):

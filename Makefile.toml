@@ -12,3 +12,27 @@ description = "Train Morimoto model on MNIST"
 category = "Training"
 command = "uv"
 args = ["run", "src/general_train.py", "--dataset", "mnist", "--model", "morimoto-mnist", "--epochs", "99", "--batch-size", "128", "--lr", "1e-4"]
+
+[tasks.attack-morimoto-mnist-bim]
+description = "Attack Morimoto MNIST model with BIM"
+category = "Attacks"
+command = "uv"
+args = ["run", "src/general_ae.py", "--dataset", "mnist", "--model", "morimoto-mnist", "--attack", "bim", "--epsilon", "0.3", "--alpha", "0.05", "--n", "10", "--batch-size", "1"]
+
+[tasks.attack-morimoto-mnist-fgsm]
+description = "Attack Morimoto MNIST model with FGSM"
+category = "Attacks"
+command = "uv"
+args = ["run", "src/general_ae.py", "--dataset", "mnist", "--model", "morimoto-mnist", "--attack", "fgsm", "--epsilon", "0.3", "--batch-size", "1"]
+
+[tasks.attack-sample-ploof]
+description = "Attack Ploof model on MNIST with FGSM"
+category = "Attacks"
+command = "uv"
+args = ["run", "src/general_ae.py", "--dataset", "mnist", "--model", "ploof", "--attack", "fgsm"]
+
+[tasks.attack-bim-advo]
+description = "Attack InceptionV3 model on ImageNet with BIM"
+category = "Attacks"
+command = "uv"
+args = ["run", "src/general_ae.py", "--dataset", "imagenet", "--model", "inception-v3", "--attack", "bim", "--epsilon", "0.3", "--alpha", "0.05", "--n", "10", "--batch-size", "1"]

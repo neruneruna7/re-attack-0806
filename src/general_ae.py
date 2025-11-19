@@ -27,53 +27,6 @@ import foolbox
 from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
 from re_attack_0806.utils.normTensor import *
 
-
-class PresetKind(str, Enum):
-    MORIMOTO_MNIST_BIM = "morimoto_mnist_bim"
-    MORIMOTO_MNIST_FGSM = "morimoto_mnist_fgsm"
-    SAMPLE_PLOOF = "sample_ploof"
-    BIM_ADVO = "bim_advo"
-    DEFAULT = "default"
-
-# プリセットマッピング: 各プリセットは Config のフィールドを設定する（必要に応じて enum 値を使用）
-PRESETS = {
-    PresetKind.DEFAULT: {
-    # 何もしない（noop）
-    },
-    PresetKind.MORIMOTO_MNIST_BIM: {
-        "dataset": DatasetKind.MNIST,
-        "model": ModelKind.MORIMOTO_MNIST,
-        "attack": AttackKind.BIM,
-        "epsilon": 0.3,
-        "alpha": 0.05,
-        "n": 10,
-        "batch_size": 1,
-    },
-    PresetKind.MORIMOTO_MNIST_FGSM: {
-        "dataset": DatasetKind.MNIST,
-        "model": ModelKind.MORIMOTO_MNIST,
-        "attack": AttackKind.FGSM,
-        "epsilon": 0.3,
-        "batch_size": 1,
-    },
-
-    PresetKind.SAMPLE_PLOOF: {
-        "dataset": DatasetKind.MNIST,
-        "model": ModelKind.PLOOF,
-        "attack": AttackKind.FGSM,
-    },
-    PresetKind.BIM_ADVO : {
-        "dataset": DatasetKind.IMAGE_NET,
-        "model": ModelKind.INCEPTION_V3,
-        "attack": AttackKind.BIM,
-        "epsilon": 0.3,
-        "alpha": 0.05,
-        "n": 10,
-        "batch_size": 1,
-    }
-}
-
-
 @dataclass
 class Config:
     dataset: DatasetKind = DatasetKind.MNIST
@@ -82,21 +35,10 @@ class Config:
     model_dir: str = "./weight"
     epsilon: float = 0.3
     alpha: float = 0.05
-    iters: int = 10
     n: int = 10
     batch_size: int = 1
     device: Optional[torch.device] = None
     dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
-
-def apply_preset(cfg: Config, paper: PresetKind) -> Config:
-    """Return new Config with preset fields applied (shallow copy)."""
-    preset = PRESETS.get(paper, {})
-    new_cfg = deepcopy(cfg)
-    for k, v in preset.items():
-        if hasattr(new_cfg, k):
-            setattr(new_cfg, k, v)
-    return new_cfg
-
 
 class Runner:
     def __init__(self, cfg: Config):
@@ -240,12 +182,10 @@ def parse_args() -> Config:
     parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
     parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_MNIST.value)
     parser.add_argument("--attack", choices=[a.value for a in AttackKind], default=AttackKind.BIM.value)
-    parser.add_argument("--preset", choices=[p.value for p in PresetKind], default=None,
-                        help="apply preset parameters for a reference paper")
     parser.add_argument("--model-dir", default="./weight")
     parser.add_argument("--epsilon", type=float, default=0.3)
     parser.add_argument("--alpha", type=float, default=0.05)
-    parser.add_argument("--iters", type=int, default=10)
+    parser.add_argument("--n", type=int, default=10, help="number of iterations for BIM")
     parser.add_argument("--batch-size", type=int, default=1)
     args = parser.parse_args()
     cfg = Config(
@@ -255,14 +195,11 @@ def parse_args() -> Config:
         model_dir=args.model_dir,
         epsilon=args.epsilon,
         alpha=args.alpha,
-        iters=args.iters,
+        n=args.n,
         batch_size=args.batch_size,
         device=utils.get_device(),
         dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device())
     )
-
-    if args.preset:
-        cfg = apply_preset(cfg, PresetKind(args.preset))
     return cfg
 
 def main():
