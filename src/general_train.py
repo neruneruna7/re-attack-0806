@@ -1,5 +1,6 @@
 # モデルをトレーニングする汎用コード
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
+from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,18 +11,39 @@ import matplotlib.pyplot as plt
 import os
 from PIL import Image
 from torch import Tensor
+import argparse
 import re_attack_0806
 
 from re_attack_0806 import utils
-from re_attack_0806.utils.config import DataFactory, DatasetKind
+from re_attack_0806.utils.config import DataFactory, DatasetKind, ModelFactory, ModelKind
 from re_attack_0806.models import MorimotoMnist, MorimotoCifar10
 
-class TrainParam:
-    def __init__(self, epochs: int = 10, batch_size: int = 128, lr: float = 1e-2, save_weight_dir: str = "./weight"):
-        self.epochs = epochs
-        self.batch_size = batch_size
-        self.lr = lr
-        self.save_dir = save_weight_dir
+@dataclass
+class Config:
+    dataset: DatasetKind = DatasetKind.CIFAR10
+    model: ModelKind = ModelKind.MORIMOTO_CIFAR10
+    epochs: int = 10
+    batch_size: int = 128
+    lr: float = 1e-2
+    save_dir: str = "./weight"
+
+def parse_args() -> Config:
+    parser = argparse.ArgumentParser(description="general train runner")
+    parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.CIFAR10.value)
+    parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_CIFAR10.value)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--lr", type=float, default=1e-2)
+    parser.add_argument("--save-dir", default="./weight")
+    args = parser.parse_args()
+    return Config(
+        dataset=DatasetKind(args.dataset),
+        model=ModelKind(args.model),
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        save_dir=args.save_dir,
+    )
 
 
 def train(data_loader, model: nn.Module, loss_fn, optimizer, device):
@@ -127,46 +149,40 @@ def plot_training_progress(data: list[tuple[float, float, float]], out_path: str
         print(f"Failed to create training plot: {e}")
 
 def main():
-    save_dir = "./weight"
+    cfg = parse_args()
+    print(f"Running with config: {cfg}")
 
-    # mnist_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-4, save_weight_dir=save_dir)
-    # general_train_param = mnist_train_param
-
-    cifar10_train_param = TrainParam(epochs=99, batch_size=128, lr=1e-2, save_weight_dir=save_dir)
-    general_train_param = cifar10_train_param
-
-    # DataFactory を使ってデータローダを生成（config.py に定義された変換と正規化を利用）
-    train_loader = DataFactory.loader(DatasetKind.CIFAR10, train=True, batch_size=cifar10_train_param.batch_size)
-    test_loader = DataFactory.loader(DatasetKind.CIFAR10, train=False, batch_size=cifar10_train_param.batch_size)
+    # DataFactory を使ってデータローダを生成
+    train_loader = DataFactory.loader(cfg.dataset, train=True, batch_size=cfg.batch_size)
+    test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
     
     device = utils.get_device()
-    
     print(f"Using {device} device")
 
-
-    # model = MorimotoMnist.MnistNet().to(device)
-    model = MorimotoCifar10.Cifar10Net().to(device)
+    # ModelFactory を使ってモデルを生成
+    model = ModelFactory.create(cfg.model, device)
     print(model)
 
-
-
-    print(f"Learning rate: {general_train_param.lr}")
+    print(f"Learning rate: {cfg.lr}")
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=general_train_param.lr)
+    optimizer = optim.Adam(model.parameters(), lr=cfg.lr)
 
     # 学習ループを実行
-    results = train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, general_train_param.epochs)
+    results = train_roop(model, loss_fn, optimizer, train_loader, test_loader, device, cfg.epochs)
+    
     # 結果に基づいてプロットを出力
-    plot_path = os.path.join("./assets", "training_plot.png")
+    plot_path = os.path.join("./assets", f"training_plot_{cfg.dataset.value}_{cfg.model.value}.png")
     try:
         plot_training_progress(results, out_path=plot_path)
     except Exception as e:
         print(f"Failed to plot training progress: {e}")
 
-
     # モデルの保存
-    torch.save(model.state_dict(), os.path.join(save_dir, f"{model.model_name}.pth"))
-    print(f"Saved initial model to {os.path.join(save_dir, f'{model.model_name}.pth')}")
+    if not os.path.exists(cfg.save_dir):
+        os.makedirs(cfg.save_dir)
+    save_path = os.path.join(cfg.save_dir, f"{model.model_name}.pth")
+    torch.save(model.state_dict(), save_path)
+    print(f"Saved model to {save_path}")
 
 
 if __name__ == "__main__":
