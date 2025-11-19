@@ -82,8 +82,6 @@ class Runner:
         adv_examples = []
 
         for i, (data, target) in tqdm(enumerate(self.test_loader)):
-            if i >= 100:  # 最初の100サンプルだけ攻撃
-                break
             data = data.to(self.device)
             data = TensorWithState(data, DENORMALIZED)
             data = self.cfg.dataset_norm.normalize(data)
@@ -188,14 +186,30 @@ class Runner:
             adv_examples.append((i, target.item(), pred.item(), pred2.item(), perturbed.tensor.squeeze().detach().cpu(), average_perturbation.item()))
         return adv_examples
     
+def fraction_float(s: str) -> float:
+    """
+    argparseで分数形式の文字列（例: "8/255"）をfloatに変換するための型関数。
+    """
+    if "/" in s:
+        try:
+            num, den = s.split("/")
+            return float(num) / float(den)
+        except (ValueError, ZeroDivisionError):
+            raise argparse.ArgumentTypeError(f'"{s}" は不正な分数形式です。')
+    try:
+        return float(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'"{s}" は不正なfloat値です。')
+
+
 def parse_args() -> Config:
     parser = argparse.ArgumentParser(description="general AE attack runner")
     parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
     parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_MNIST.value)
     parser.add_argument("--attack", choices=[a.value for a in AttackKind], default=AttackKind.BIM.value)
     parser.add_argument("--model-dir", default="./weight")
-    parser.add_argument("--epsilon", type=float, default=0.3)
-    parser.add_argument("--alpha", type=float, default=0.05)
+    parser.add_argument("--epsilon", type=fraction_float, default=0.3)
+    parser.add_argument("--alpha", type=fraction_float, default=0.05)
     parser.add_argument("--n", type=int, default=10, help="number of iterations for BIM")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--save-attacked-images", action="store_true", default=True,
