@@ -43,6 +43,7 @@ class Config:
     dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
     save_attacked_images: bool = True # 攻撃後の画像を保存するかどうかのフラグ
     output_dir: str = "attacked_data" # 保存先ディレクトリ
+    num_samples: int = -1 # 処理するサンプル数 (-1は全サンプル)
 
 class Runner:
     def __init__(self, cfg: Config):
@@ -146,9 +147,9 @@ class Runner:
 
             # バッチ内の各サンプルについて結果をyield
             for j in range(current_batch_size):
-                # 制限を超えたらループを抜ける
-                if global_idx >= 100:
-                    break
+                # num_samplesが指定されている場合、制限を超えたらジェネレータを終了
+                if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
+                    return
                 
                 perturbed_sample_denorm = TensorWithState(denormalized_perturbed.tensor[j].detach().cpu(), DENORMALIZED)
                 
@@ -192,6 +193,8 @@ def parse_args() -> Config:
                         help="Save attacked images to specified output directory")
     parser.add_argument("--output-dir", type=str, default="attacked_data",
                         help="Directory to save attacked images")
+    parser.add_argument("--num-samples", type=int, default=-1,
+                        help="Number of samples to process. -1 for all samples.")
     args = parser.parse_args()
     cfg = Config(
         dataset=DatasetKind(args.dataset),
@@ -205,7 +208,8 @@ def parse_args() -> Config:
         device=utils.get_device(),
         dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device()),
         save_attacked_images=args.save_attacked_images,
-        output_dir=args.output_dir
+        output_dir=args.output_dir,
+        num_samples=args.num_samples
     )
     return cfg
 
