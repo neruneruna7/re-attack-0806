@@ -15,6 +15,12 @@ dependencies = [
     "pandas>=2.3.3",
 ]
 
+[project.optional-dependencies]
+# ColabでのTPU利用時のみインストールする依存関係
+colab = [
+    "torch-xla>=2.0", # バージョンは適宜変更
+]
+
 [project.scripts]
 # sample-project = "lib:main"
 re-attack-0806 = "re_attack_0806:main"
