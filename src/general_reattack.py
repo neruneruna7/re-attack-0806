@@ -1,6 +1,7 @@
-# モデルをトレーニングする汎用コード
+# 再攻撃を実行し、その結果を評価・保存する汎用コード
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
+from torch.types import Number
+from typing import Any, Iterator, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,6 +10,7 @@ from torchvision import datasets, transforms
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import csv
 from PIL import Image
 from torch import Tensor
 from enum import Enum
@@ -16,60 +18,50 @@ import argparse
 import re_attack_0806
 from copy import deepcopy
 
-from re_attack_0806.models import MorimotoMnist, MorimotoCifar10, Ploof
 from re_attack_0806 import attacks, utils
 from re_attack_0806.attacks import bim, fgsm
-from re_attack_0806 import attacks____
-# lib 以下の attacks パッケージを使用（fgsm と bim を実装）
-
-import foolbox
-
 from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
 from re_attack_0806.utils.normTensor import *
 
-from enum import Enum
-
-class TargetLabelSource(Enum):
-    ORIGINAL_PRED = "original_pred"  # 元のモデルの予測ラベル
-    TRUE_LABEL = "true_label"        # 真のラベル
-    FIXED_LABEL = "fixed_label"      # 固定値のラベル
+from tqdm import tqdm
 
 @dataclass
 class Config:
     dataset: DatasetKind = DatasetKind.MNIST
     model: ModelKind = ModelKind.MORIMOTO_MNIST
-    attack: AttackKind = AttackKind.BIM
     model_dir: str = "./weight"
-    epsilon: float = 0.3
-    alpha: float = 0.05
-    n: int = 10
-    batch_size: int = 1
+    batch_size: int = 16
     device: Optional[torch.device] = None
     dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
+    output_dir: str = "reattacked_data"
+    num_samples: int = -1
 
-    # Re-attack specific parameters
-    attacked_image_dir: str = "data/attacked_images"
-    reattack_epsilon: float = 0.05
-    reattack_alpha: float = 0.01
-    reattack_n: int = 1
-    target_label_source: TargetLabelSource = TargetLabelSource.ORIGINAL_PRED
-    fixed_target_label: Optional[int] = None
-    re_attack_kind: AttackKind = AttackKind.FGSM
+    # Initial Attack Config
+    attack_kind: AttackKind = AttackKind.BIM
+    attack_eps: float = 0.3
+    attack_alpha: float = 0.05
+    attack_n: int = 10
+
+    # Re-Attack Config
+    reattack_kind: AttackKind = AttackKind.BIM
+    reattack_eps: float = 0.3
+    reattack_alpha: float = 0.05
+    reattack_n: int = 10
+
 
 class Runner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.device = cfg.device or utils.get_device()
         self.model = ModelFactory.create(cfg.model, self.device)
-        # 既存の test_loader は再攻撃では使わないため削除またはコメントアウト
-        # self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
-
-        # 攻撃済み画像をロードするための処理
-        self.attacked_images_info = self._get_attacked_image_paths()
-        
+        self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
         self._load_weights_if_exists(cfg.model_dir)
 
     def _load_weights_if_exists(self, model_dir: str):
+        model_name = getattr(self.model, "model_name", None)
+        if model_name is None:
+            print(f"warning: model has no 'model_name' attribute (model class: {self.model.__class__.__name__}), skipping weight load")
+            return
         path = os.path.join(model_dir, f"{self.model.model_name}.pth")
         if os.path.exists(path):
             st = torch.load(path, map_location=self.device)
@@ -77,251 +69,249 @@ class Runner:
                 self.model.load_state_dict(st)
                 print(f"loaded weights from {path}")
             except Exception:
-                # より緩い読み込みを試みる（保存された state_dict にラッパー等が含まれる場合）
-                print(f"failed to load exact state_dict from {path}, continuing with init model")
-
-    def _get_attacked_image_paths(self) -> List[Tuple[str, float, int, int]]:
-        """
-        指定されたディレクトリから攻撃済み画像のパスと関連情報を取得する
-        戻り値: (ファイルパス, 元のイプシロン, 画像インデックス, 真のラベル) のリスト
-        """
-        image_info_list = []
-        # attacked_image_dir は "data/attacked_images" のような形式を想定
-        # そのサブディレクトリは "eps_0.100" のような形式を想定
-        # さらにその中に "attacked_idx_0_label_5.pt" のようなファイルがあることを想定
-        
-        # まず、ベースディレクトリ内のイプシロンごとのサブディレクトリを走査
-        for eps_dir_name in os.listdir(self.cfg.attacked_image_dir):
-            eps_dir_path = os.path.join(self.cfg.attacked_image_dir, eps_dir_name)
-            if not os.path.isdir(eps_dir_path):
-                continue
-            
-            try:
-                # フォルダ名からイプシロン値を取得 (例: "eps_0.100" -> 0.1)
-                eps_str = eps_dir_name.split('_')[-1]
-                original_epsilon = float(eps_str)
-            except ValueError:
-                print(f"Skipping directory with invalid epsilon format: {eps_dir_name}")
-                continue
-
-            # サブディレクトリ内の画像ファイルを走査
-            for file_name in os.listdir(eps_dir_path):
-                # .pt または .pth ファイルのみを対象とする
-                if file_name.endswith(".pt") or file_name.endswith(".pth"):
-                    file_path = os.path.join(eps_dir_path, file_name)
-                    try:
-                        # ファイル名から index と true_label を取得
-                        # utils.from_filename は "attacked_12_label_3.png" のようなファイル名を想定しているため
-                        # ".pt" を削除したファイル名で渡す必要がある
-                        idx, true_label = utils.from_filename(file_name.replace(".pt", "").replace(".pth", ""))
-                        image_info_list.append((file_path, original_epsilon, idx, true_label))
-                    except ValueError as e:
-                        print(f"Skipping file with invalid filename format: {file_name}. Error: {e}")
-                        continue
-        return image_info_list
-
-    def _load_weights_if_exists(self, model_dir: str):
-        path = os.path.join(model_dir, f"{self.model.model_name}.pth")
-        if os.path.exists(path):
-            st = torch.load(path, map_location=self.device)
-            try:
-                self.model.load_state_dict(st)
-                print(f"loaded weights from {path}")
-            except Exception:
-                # より緩い読み込みを試みる（保存された state_dict にラッパー等が含まれる場合）
                 print(f"failed to load exact state_dict from {path}, continuing with init model")
 
     @staticmethod
     def _to_logits(output: Tensor) -> Tensor:
-    # （必要であれば）(N,C,H,W) を全体平均して (N,C) に変換する
         if output.dim() == 4:
             return output.mean(dim=(2, 3))
         if output.dim() > 2:
             return output.view(output.size(0), output.size(1), -1).mean(dim=2)
         return output
-    
-    def run(self) -> List[Tuple[int, int, int, Tensor, float]]:
-        print(f"Running re-attack {self.cfg.re_attack_kind} on model {self.cfg.model} with cfg: {self.cfg}")
+
+    def _perform_attack(self, data: TensorWithState, target: Tensor, kind: AttackKind, **kwargs: Any) -> TensorWithState:
+        eps = kwargs.get('eps', self.cfg.attack_eps) # Fallback to attack_eps if not provided
+        alpha = kwargs.get('alpha', self.cfg.attack_alpha) # Fallback to attack_alpha if not provided
+        n = kwargs.get('n', self.cfg.attack_n) # Fallback to attack_n if not provided
+
+        if kind == AttackKind.BIM:
+            return bim.bim(data, target, self.model, self.device, eps, alpha, n, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
+        elif kind == AttackKind.FGSM:
+            return fgsm.fgsm(data, eps, target, self.model, self.device)
+        elif kind == AttackKind.FOOLBOX_BIM:
+            # Dynamically set preprocessing based on dataset
+            if self.cfg.dataset == DatasetKind.MNIST:
+                preprocessing = dict(
+                    mean=self.cfg.dataset_norm.mean.item(), # MNIST is grayscale, often single channel
+                    std=self.cfg.dataset_norm.std.item(),   # MNIST is grayscale, often single channel
+                )
+            else: # CIFAR-10 etc. (3-channel images)
+                preprocessing = dict(
+                    mean=self.cfg.dataset_norm.mean.tolist(),
+                    std=self.cfg.dataset_norm.std.tolist(),
+                    axis=-3 # Channel dimension for (C,H,W)
+                )
+            bounds = (0.0, 1.0) # Assumes normalized images are 0-1 range
+
+            try:
+                fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+                attack = foolbox.attacks.LinfBasicIterativeAttack(steps=n, abs_stepsize=alpha) # type: ignore[reportPrivateImportUsage]
+                
+                # Foolbox expects normalized images as input
+                raw, clipped, is_adv = attack(fmodel, data.tensor, target, epsilons=eps)
+                __perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+                return TensorWithState(__perturbed, NORMALIZED)
+            except Exception as e:
+                print(f"Foolbox BIM attack ({kind.value}) failed: {e}. Returning original data.")
+                return data # Return original data if attack fails
+        else:
+            raise ValueError(f"unsupported attack kind: {kind}")
+
+    def run(self) -> Iterator[Tuple]:
+        print(f"Running Re-Attack with config: {self.cfg}")
         self.model.eval()
-        reattack_examples = []
 
-        for file_path, original_epsilon, original_idx, true_label in self.attacked_images_info:
-            # 攻撃済み画像をロード
-            # _get_attacked_image_paths でファイルパスを取得済みなので直接ロード
-            img_denorm: Tensor = torch.load(file_path, map_location=self.device)
-            # 画像がバッチ次元を持つか確認し、必要であれば追加
-            if img_denorm.dim() == 3:
-                img_denorm = img_denorm.unsqueeze(0) # (C, H, W) -> (1, C, H, W)
+        global_idx = 0
+        for data, target in tqdm(self.test_loader):
+            if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
+                break
+            
+            current_batch_size = data.shape[0]
+            clean_data_ts = TensorWithState(data.to(self.device), DENORMALIZED)
+            clean_data_ts_norm = self.cfg.dataset_norm.normalize(clean_data_ts)
+            target_ts: Tensor = target.to(self.device).view(-1).long()
+            
+            # --- Predictions for clean data ---
+            logits_clean = self._to_logits(self.model(clean_data_ts_norm.tensor))
+            pred_clean = logits_clean.max(1, keepdim=True)[1]
 
-            # denorm -> norm
-            # データタイプを cfg.dataset_norm.normalize の期待値に合わせる
-            data_raw = TensorWithState(img_denorm, DENORMALIZED)
-            data = self.cfg.dataset_norm.normalize(data_raw).to(self.device)
-            data.tensor.requires_grad = True
-
-            # ターゲットラベルの決定
-            with torch.no_grad():
-                original_output = self.model(data.tensor)
-                original_logits = self._to_logits(original_output)
-                original_pred = original_logits.max(1, keepdim=True)[1].item()
-
-            target_label: Tensor
-            if self.cfg.target_label_source == TargetLabelSource.ORIGINAL_PRED:
-                target_label = torch.tensor([original_pred], device=self.device)
-            elif self.cfg.target_label_source == TargetLabelSource.TRUE_LABEL:
-                target_label = torch.tensor([true_label], device=self.device)
-            elif self.cfg.target_label_source == TargetLabelSource.FIXED_LABEL:
-                if self.cfg.fixed_target_label is None:
-                    raise ValueError("fixed_target_label must be set when target_label_source is FIXED_LABEL")
-                target_label = torch.tensor([self.cfg.fixed_target_label], device=self.device)
-            else:
-                raise ValueError(f"unsupported target_label_source: {self.cfg.target_label_source}")
-
-            target_label = target_label.view(-1).long()
-
-
-            # 勾配計算 (再攻撃のための勾配)
-            # BIMやFGSMなどの勾配ベースの攻撃では、勾配を計算する必要がある
-            # ここでは再攻撃対象となるモデルの出力に対する損失を計算し、その勾配を得る
-            output_for_grad = self.model(data.tensor)
-            logits_for_grad = self._to_logits(output_for_grad)
-            loss_for_grad = F.cross_entropy(logits_for_grad, target_label)
-            self.model.zero_grad()
-            loss_for_grad.backward()
-            grad = data.tensor.grad
-            if grad is None:
-                print(f"skip file {file_path}: no grad")
-                continue
-            data_grad = TensorWithState(grad.data, NORMALIZED)
-
-            # 再攻撃実行
-            perturbed_data: TensorWithState
-            if self.cfg.re_attack_kind == AttackKind.BIM:
-                # BIM は (data_grad, target, model, device, epsilon, alpha, n) を想定
-                perturbed_data = bim.bim(
-                    data_grad,
-                    target_label,
-                    self.model,
-                    self.device,
-                    self.cfg.reattack_epsilon,
-                    self.cfg.reattack_alpha,
-                    self.cfg.reattack_n,
-                )
-            elif self.cfg.re_attack_kind == AttackKind.FGSM:
-                # FGSM は (data_grad, epsilon, target, model, device) を想定
-                perturbed_data = fgsm.fgsm(
-                    data_grad,
-                    self.cfg.reattack_epsilon, # 再攻撃用のイプシロン
-                    target_label,
-                    self.model,
-                    self.device,
-                )
-            else:
-                raise ValueError(f"unsupported re-attack kind: {self.cfg.re_attack_kind}")
-
-            # 再攻撃後の予測
-            out_after_reattack = self.model(perturbed_data.tensor)
-            logits_after_reattack = self._to_logits(out_after_reattack)
-            pred_after_reattack = logits_after_reattack.max(1, keepdim=True)[1].item()
-
-            average_perturbation = utils.l2_norm_perturbation(
-                self.cfg.dataset_norm.denormalize(data), # 元の攻撃済み画像（非正規化）
-                self.cfg.dataset_norm.denormalize(perturbed_data) # 再攻撃後の画像（非正規化）
+            # --- Initial Attack ---
+            attacked_data_ts_norm = self._perform_attack(
+                clean_data_ts_norm, 
+                target_ts, 
+                self.cfg.attack_kind,
+                eps=self.cfg.attack_eps,
+                alpha=self.cfg.attack_alpha,
+                n=self.cfg.attack_n
             )
+            logits_attacked = self._to_logits(self.model(attacked_data_ts_norm.tensor))
+            pred_attacked = logits_attacked.max(1, keepdim=True)[1]
 
-            reattack_examples.append((original_idx, original_pred, pred_after_reattack, perturbed_data.tensor.squeeze().detach().cpu(), average_perturbation.item()))
+            # --- Re-Attack ---
+            # The target for re-attack is the prediction of the attacked image
+            reattack_target = pred_attacked.view(-1)
+            reattacked_data_ts_norm = self._perform_attack(
+                attacked_data_ts_norm, 
+                reattack_target, 
+                self.cfg.reattack_kind,
+                eps=self.cfg.reattack_eps,
+                alpha=self.cfg.reattack_alpha,
+                n=self.cfg.reattack_n
+            )
+            logits_reattacked = self._to_logits(self.model(reattacked_data_ts_norm.tensor))
+            pred_reattacked = logits_reattacked.max(1, keepdim=True)[1]
 
-        return reattack_examples
-    
+            # --- Denormalize and calculate L2 norms ---
+            clean_data_denorm = self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor
+            attacked_data_denorm = self.cfg.dataset_norm.denormalize(attacked_data_ts_norm).tensor
+            reattacked_data_denorm = self.cfg.dataset_norm.denormalize(reattacked_data_ts_norm).tensor
+
+            l2_clean_vs_attacked = torch.linalg.norm((clean_data_denorm - attacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
+            l2_attacked_vs_reattacked = torch.linalg.norm((attacked_data_denorm - reattacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
+            l2_clean_vs_reattacked = torch.linalg.norm((clean_data_denorm - reattacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
+
+            # --- Yield results for each sample in the batch ---
+            for j in range(current_batch_size):
+                if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
+                    return
+
+                reattacked_sample_denorm_ts = TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
+
+                yield (
+                    global_idx,
+                    target_ts[j].item(),
+                    pred_clean.view(-1)[j].item(),
+                    pred_attacked.view(-1)[j].item(),
+                    pred_reattacked.view(-1)[j].item(),
+                    l2_clean_vs_attacked[j].item(),
+                    l2_attacked_vs_reattacked[j].item(),
+                    l2_clean_vs_reattacked[j].item(),
+                    reattacked_sample_denorm_ts
+                )
+                global_idx += 1
+
+def fraction_float(s: str) -> float:
+    if "/" in s:
+        try:
+            num, den = s.split("/")
+            return float(num) / float(den)
+        except (ValueError, ZeroDivisionError):
+            raise argparse.ArgumentTypeError(f'"{s}" is not a valid fraction.')
+    try:
+        return float(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'"{s}" is not a valid float.')
+
 def parse_args() -> Config:
-    parser = argparse.ArgumentParser(description="general AE attack runner")
+    parser = argparse.ArgumentParser(description="General Re-Attack Runner")
     parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
     parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_MNIST.value)
-    # attack は元の攻撃の種類なので、ここでは使用しないかもしれないが、互換性のため残す
-    parser.add_argument("--attack", choices=[a.value for a in AttackKind], default=AttackKind.BIM.value)
     parser.add_argument("--model-dir", default="./weight")
-    parser.add_argument("--epsilon", type=float, default=0.3)
-    parser.add_argument("--alpha", type=float, default=0.05)
-    parser.add_argument("--n", type=int, default=10, help="number of iterations for BIM")
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--output-dir", type=str, default="reattacked_data")
+    parser.add_argument("--num-samples", type=int, default=-1, help="Number of samples to process. -1 for all samples.")
 
-    # Re-attack specific arguments
-    parser.add_argument("--attacked-image-dir", type=str, default="data/attacked_images",
-                        help="Directory containing previously attacked images")
-    parser.add_argument("--reattack-epsilon", type=float, default=0.05,
-                        help="Epsilon for re-attack")
-    parser.add_argument("--reattack-alpha", type=float, default=0.01,
-                        help="Alpha for re-attack (BIM only)")
-    parser.add_argument("--reattack-n", type=int, default=1,
-                        help="Number of iterations for re-attack (BIM only)")
-    parser.add_argument("--target-label-source", choices=[tls.value for tls in TargetLabelSource],
-                        default=TargetLabelSource.ORIGINAL_PRED.value,
-                        help="Source for target labels in re-attack")
-    parser.add_argument("--fixed-target-label", type=int, default=None,
-                        help="Fixed target label when target-label-source is FIXED_LABEL")
-    parser.add_argument("--re-attack-kind", choices=[ak.value for ak in AttackKind],
-                        default=AttackKind.FGSM.value,
-                        help="Kind of attack for re-attack (e.g., FGSM, BIM)")
+    # Initial Attack args
+    parser.add_argument("--attack-kind", choices=[a.value for a in AttackKind if a in [AttackKind.BIM, AttackKind.FGSM]], default=AttackKind.BIM.value)
+    parser.add_argument("--attack-eps", type=fraction_float, default=0.3)
+    parser.add_argument("--attack-alpha", type=fraction_float, default=0.05)
+    parser.add_argument("--attack-n", type=int, default=10)
+    
+    # Re-Attack args
+    parser.add_argument("--reattack-kind", choices=[a.value for a in AttackKind if a in [AttackKind.BIM, AttackKind.FGSM]], default=AttackKind.BIM.value)
+    parser.add_argument("--reattack-eps", type=fraction_float, default=0.3)
+    parser.add_argument("--reattack-alpha", type=fraction_float, default=0.05)
+    parser.add_argument("--reattack-n", type=int, default=10)
 
     args = parser.parse_args()
-    cfg = Config(
+    return Config(
         dataset=DatasetKind(args.dataset),
         model=ModelKind(args.model),
-        attack=AttackKind(args.attack), # この値は再攻撃では直接使われないが、Configの互換性のため残す
         model_dir=args.model_dir,
-        epsilon=args.epsilon, # この値も再攻撃では直接使われないが、Configの互換性のため残す
-        alpha=args.alpha,     # この値も再攻撃では直接使われないが、Configの互換性のため残す
-        n=args.n,             # この値も再攻撃では直接使われないが、Configの互換性のため残す
-        batch_size=args.batch_size, # この値も再攻撃では直接使われないが、Configの互換性のため残す
+        batch_size=args.batch_size,
         device=utils.get_device(),
         dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device()),
-
-        # Re-attack specific parameters
-        attacked_image_dir=args.attacked_image_dir,
-        reattack_epsilon=args.reattack_epsilon,
+        output_dir=args.output_dir,
+        num_samples=args.num_samples,
+        attack_kind=AttackKind(args.attack_kind),
+        attack_eps=args.attack_eps,
+        attack_alpha=args.attack_alpha,
+        attack_n=args.attack_n,
+        reattack_kind=AttackKind(args.reattack_kind),
+        reattack_eps=args.reattack_eps,
         reattack_alpha=args.reattack_alpha,
         reattack_n=args.reattack_n,
-        target_label_source=TargetLabelSource(args.target_label_source),
-        fixed_target_label=args.fixed_target_label,
-        re_attack_kind=AttackKind(args.re_attack_kind)
     )
-    return cfg
 
 def main():
     cfg = parse_args()
     runner = Runner(cfg)
-    result = runner.run()
+    result_generator = runner.run()
 
-    # 統計を計算:
-    total_images = len(result)
-    successful_reattacks = 0
-    mean_perturbation = 0.0
+    # --- Prepare directories and CSV ---
+    attack_name = f"{cfg.attack_kind.value}_eps{cfg.attack_eps:.3f}"
+    reattack_name = f"{cfg.reattack_kind.value}_eps{cfg.reattack_eps:.3f}"
+    output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_name, reattack_name)
+    os.makedirs(output_folder, exist_ok=True)
+    
+    csv_filename = os.path.join(output_folder, "reattack_results.csv")
+    csv_header = [
+        "index", "target_label", "pred_clean", "pred_attacked", "pred_reattacked",
+        "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked",
+        "reattacked_image_path"
+    ]
+    
+    with open(csv_filename, 'w', newline='') as csvfile:
+        csv.writer(csvfile).writerow(csv_header)
 
-    if total_images == 0:
-        print("No images found for re-attack.")
-        return
+    # --- Process results ---
+    stats = {
+        'total': 0,
+        'clean_correct': 0,
+        'attack_successful': 0,
+        'reattack_successful_to_clean': 0,
+        'reattack_successful_to_any': 0,
+    }
 
-    for original_idx, original_pred, pred_after_reattack, reattacked_image, perturbation in result:
-        mean_perturbation += perturbation
-        # 再攻撃前の予測と再攻撃後の予測が異なる場合、再攻撃成功とみなす
-        if original_pred != pred_after_reattack:
-            successful_reattacks += 1
-            # print(f"Index: {original_idx}, Original Pred: {original_pred}, Re-attacked Pred: {pred_after_reattack}, Perturbation: {perturbation:.4f}")
+    for result_tuple in result_generator:
+        (idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_ts) = result_tuple
+        
+        stats['total'] += 1
+        is_clean_correct = (pred_c == target)
+        if is_clean_correct:
+            stats['clean_correct'] += 1
+            if pred_a != pred_c:
+                stats['attack_successful'] += 1
+                if pred_r == pred_c:
+                    stats['reattack_successful_to_clean'] += 1
+                if pred_r != pred_a:
+                    stats['reattack_successful_to_any'] += 1
 
-    reattack_success_rate = (successful_reattacks / total_images) if total_images > 0 else 0.0
-    mean_perturbation_avg = (mean_perturbation / total_images) if total_images > 0 else 0.0
+        # Save image
+        image_path = os.path.join(output_folder, f"idx_{idx}_target{target}_r{pred_r}.png")
+        utils.save_tensor_as_image(image_ts.tensor, image_path)
+        
+        # Write to CSV
+        csv_row = [idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_path]
+        with open(csv_filename, 'a', newline='') as csvfile:
+            csv.writer(csvfile).writerow(csv_row)
 
-    print(f"--- Re-attack Summary ---")
-    print(f"Re-attack Kind: {cfg.re_attack_kind.value}")
-    print(f"Target Model: {cfg.model.value}")
-    print(f"Total Images Processed: {total_images}")
-    print(f"Successful Re-attacks: {successful_reattacks}")
-    print(f"Re-attack Success Rate = {reattack_success_rate:.4f} = {successful_reattacks} / {total_images}")
-    print(f"Average Perturbation (L2 norm): {mean_perturbation_avg:.4f}")
+    # --- Print Summary ---
+    total = stats['total']
+    clean_correct = stats['clean_correct']
+    attack_successful = stats['attack_successful']
+    reattack_to_clean = stats['reattack_successful_to_clean']
+    
+    print("\n=== Re-Attack Summary ===")
+    print(f"Processed {total} samples.")
+    print(f"Clean Accuracy: {clean_correct / total:.4f} ({clean_correct}/{total})")
+    if clean_correct > 0:
+        print(f"Initial Attack Success Rate: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
+        if attack_successful > 0:
+            print(f"Re-Attack Success Rate (to Clean): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
+    print(f"Results saved to {csv_filename}")
+    print("==========================")
 
-    # FIXED_LABELの場合の追加情報
-    if cfg.target_label_source == TargetLabelSource.FIXED_LABEL:
-        print(f"Target Label Source: FIXED_LABEL ({cfg.fixed_target_label})")
 
 if __name__ == "__main__":
     main()
