@@ -12,11 +12,29 @@ from re_attack_0806.utils.normTensor import TensorWithState
 
 
 def get_device() -> torch.device:
+    print("5. 実行デバイスを自動判別します...")
     accelerator = torch.device("cpu")
-    if torch.accelerator.is_available():
-        accelerator = torch.accelerator.current_accelerator()
-    if accelerator is None:
-        return torch.device("cpu")
+    # TPUランタイムが有効かチェック
+    if 'COLAB_TPU_ADDR' in os.environ:
+        # TPUが利用可能
+        import torch_xla.core.xla_model as xm
+        accelerator = xm.xla_device()
+        print("ハードウェアアクセラレータ: TPU を使用します。")
+    elif torch.cuda.is_available():
+        # GPU (CUDA) が利用可能
+        accelerator = torch.device("cuda")
+        print("ハードウェアアクセラレータ: GPU (CUDA) を使用します。")
+    # Mac環境でのMPSはColabでは使用できないため、ここでは判定不要
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        accelerator = torch.device("mps")
+        print("ハードウェアアクセラレータ: GPU (MPS) を使用します。")
+    else:
+        accelerator = torch.device("cpu")
+    # print("ハードウェアアクセラレータ: CPU を使用します。")
+    # if torch.accelerator.is_available():
+    #     accelerator = torch.accelerator.current_accelerator()
+    # if accelerator is None:
+    #     return torch.device("cpu")
     return accelerator
 
 
