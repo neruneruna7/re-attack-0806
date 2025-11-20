@@ -40,15 +40,15 @@ class AttackKind(str, Enum):
 
 @dataclass
 class FGSMAttackParam:
-    epsilon: float = 0.3
-    batch_size: int = 1
+    epsilon: float
+    batch_size: int
 
 @dataclass
 class BIMAttackParam:
-    epsilon: float = 0.3
-    alpha: float = 0.05
-    iters: int = 10
-    batch_size: int = 1
+    epsilon: float
+    alpha: float
+    iters: int
+    batch_size: int
 
 AttackParams = Union[FGSMAttackParam, BIMAttackParam]
 
@@ -68,10 +68,6 @@ class AttackParamKind(Enum):
     @property
     def param_class(self) -> Type:
         return self.value[1]
-
-    def default(self):
-        """この攻撃のデフォルトパラメータのインスタンスを返す。"""
-        return self.value[1]()
 
 
 # AttackKind -> AttackParamKind のマッピング（必要に応じて利用）

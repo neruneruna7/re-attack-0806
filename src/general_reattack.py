@@ -220,9 +220,9 @@ def parse_args() -> Config:
     attack_kind = AttackKind(args.attack_kind)
     attack_params: AttackParams
     if attack_kind == AttackKind.FGSM:
-        attack_params = FGSMAttackParam(epsilon=args.attack_eps)
+        attack_params = FGSMAttackParam(epsilon=args.attack_eps, batch_size=args.batch_size)
     elif attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
-        attack_params = BIMAttackParam(epsilon=args.attack_eps, alpha=args.attack_alpha, iters=args.attack_n)
+        attack_params = BIMAttackParam(epsilon=args.attack_eps, alpha=args.attack_alpha, iters=args.attack_n, batch_size=args.batch_size)
     else:
         raise ValueError(f"Unsupported attack kind for params: {attack_kind}")
 
@@ -230,9 +230,9 @@ def parse_args() -> Config:
     reattack_kind = AttackKind(args.reattack_kind)
     reattack_params: AttackParams
     if reattack_kind == AttackKind.FGSM:
-        reattack_params = FGSMAttackParam(epsilon=args.reattack_eps)
+        reattack_params = FGSMAttackParam(epsilon=args.reattack_eps, batch_size=args.batch_size)
     elif reattack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
-        reattack_params = BIMAttackParam(epsilon=args.reattack_eps, alpha=args.reattack_alpha, iters=args.reattack_n)
+        reattack_params = BIMAttackParam(epsilon=args.reattack_eps, alpha=args.reattack_alpha, iters=args.reattack_n, batch_size=args.batch_size)
     else:
         raise ValueError(f"Unsupported re-attack kind for params: {reattack_kind}")
 
