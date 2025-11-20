@@ -185,7 +185,7 @@ def parse_args() -> Config:
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"Directory to save attacked images (default: {DEFAULT_OUTPUT_DIR})")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
     parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
-    parser.add_argument("--no-save-images", action="store_true", help="Do not save attacked image files.")
+    parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=True, help='Save attacked images (default). Use --no-save-images to disable.')
 
     # 攻撃ごとの任意パラメータ
     parser.add_argument("--epsilon", type=fraction_float, default=None, help="Epsilon for attack.")
@@ -228,7 +228,7 @@ def parse_args() -> Config:
         output_dir=args.output_dir,
         batch_size=args.batch_size,
         num_samples=args.num_samples,
-        save_attacked_images=not args.no_save_images,
+        save_attacked_images=args.save_images,
         device=device,
         dataset_norm=DatasetNorm(dataset, device),
     )
