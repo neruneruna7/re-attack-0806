@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, TypeAlias
+from typing import Any, List, Optional, Tuple, TypeAlias, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -49,6 +49,8 @@ class BIMAttackParam:
     alpha: float = 0.05
     iters: int = 10
     batch_size: int = 1
+
+AttackParams = Union[FGSMAttackParam, BIMAttackParam]
 
 
 from typing import Type

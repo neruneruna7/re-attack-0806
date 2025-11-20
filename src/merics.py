@@ -56,7 +56,7 @@ def calculate_metrics(df):
 
 def main():
     # CSVを読み込む（実運用では pd.read_csv("filename.csv") を使用）
-    df = pd.read_csv("./attacked_data/imagenet/bim/eps_0.031_save/attack_results.csv")
+    df = pd.read_csv("./attacked_data/imagenet/bim/eps_0.031_save2/attack_results.csv")
 
     # 計算実行
     metrics = calculate_metrics(df)

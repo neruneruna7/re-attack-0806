@@ -20,9 +20,10 @@ from copy import deepcopy
 
 from re_attack_0806 import attacks, utils
 from re_attack_0806.attacks import bim, fgsm
-from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm
+from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm, FGSMAttackParam, BIMAttackParam, AttackParams
 from re_attack_0806.utils.normTensor import *
 
+import foolbox
 from tqdm import tqdm
 
 @dataclass
@@ -36,17 +37,11 @@ class Config:
     output_dir: str = "reattacked_data"
     num_samples: int = -1
 
-    # Initial Attack Config
+    # Attack and Re-attack Configs
     attack_kind: AttackKind = AttackKind.BIM
-    attack_eps: float = 0.3
-    attack_alpha: float = 0.05
-    attack_n: int = 10
-
-    # Re-Attack Config
+    attack_params: AttackParams = BIMAttackParam()
     reattack_kind: AttackKind = AttackKind.BIM
-    reattack_eps: float = 0.3
-    reattack_alpha: float = 0.05
-    reattack_n: int = 10
+    reattack_params: AttackParams = BIMAttackParam()
 
 
 class Runner:
@@ -79,41 +74,36 @@ class Runner:
             return output.view(output.size(0), output.size(1), -1).mean(dim=2)
         return output
 
-    def _perform_attack(self, data: TensorWithState, target: Tensor, kind: AttackKind, **kwargs: Any) -> TensorWithState:
-        eps = kwargs.get('eps', self.cfg.attack_eps) # Fallback to attack_eps if not provided
-        alpha = kwargs.get('alpha', self.cfg.attack_alpha) # Fallback to attack_alpha if not provided
-        n = kwargs.get('n', self.cfg.attack_n) # Fallback to attack_n if not provided
-
+    def _perform_attack(self, data: TensorWithState, target: Tensor, kind: AttackKind, params: AttackParams) -> TensorWithState:
         if kind == AttackKind.BIM:
-            return bim.bim(data, target, self.model, self.device, eps, alpha, n, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
+            if not isinstance(params, BIMAttackParam): raise TypeError(f"Invalid params for BIM: {type(params)}")
+            return bim.bim(data, target, self.model, self.device, params.epsilon, params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
+        
         elif kind == AttackKind.FGSM:
-            return fgsm.fgsm(data, eps, target, self.model, self.device)
+            if not isinstance(params, FGSMAttackParam): raise TypeError(f"Invalid params for FGSM: {type(params)}")
+            # fgsm.fgsmのeps_norm引数は正規化後の値。ここではピクセル空間のepsを渡す必要があるため、内部で変換するヘルパーを呼ぶか、fgsm.fgsm側で対応が必要。
+            # 今回は、fgsm.fgsmがピクセル空間のepsを受け取ると仮定して実装。bim.pyの実装を参考にすると、攻撃関数側で変換するのが良さそう。
+            # しかし、現在のfgsm.pyは正規化後のeps_normを受け取る設計。ここでは計算して渡す。
+            eps_norm = params.epsilon / self.cfg.dataset_norm.std
+            return fgsm.fgsm(data, eps_norm, target, self.model, self.device)
+            
         elif kind == AttackKind.FOOLBOX_BIM:
-            # Dynamically set preprocessing based on dataset
+            if not isinstance(params, BIMAttackParam): raise TypeError(f"Invalid params for FoolboxBIM: {type(params)}")
             if self.cfg.dataset == DatasetKind.MNIST:
-                preprocessing = dict(
-                    mean=self.cfg.dataset_norm.mean.item(), # MNIST is grayscale, often single channel
-                    std=self.cfg.dataset_norm.std.item(),   # MNIST is grayscale, often single channel
-                )
-            else: # CIFAR-10 etc. (3-channel images)
-                preprocessing = dict(
-                    mean=self.cfg.dataset_norm.mean.tolist(),
-                    std=self.cfg.dataset_norm.std.tolist(),
-                    axis=-3 # Channel dimension for (C,H,W)
-                )
-            bounds = (0.0, 1.0) # Assumes normalized images are 0-1 range
+                preprocessing = dict(mean=self.cfg.dataset_norm.mean.item(), std=self.cfg.dataset_norm.std.item())
+            else:
+                preprocessing = dict(mean=self.cfg.dataset_norm.mean.tolist(), std=self.cfg.dataset_norm.std.tolist(), axis=-3)
+            bounds = (0.0, 1.0)
 
             try:
                 fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-                attack = foolbox.attacks.LinfBasicIterativeAttack(steps=n, abs_stepsize=alpha) # type: ignore[reportPrivateImportUsage]
-                
-                # Foolbox expects normalized images as input
-                raw, clipped, is_adv = attack(fmodel, data.tensor, target, epsilons=eps)
+                attack = foolbox.attacks.LinfBasicIterativeAttack(steps=params.iters, abs_stepsize=params.alpha) # type: ignore[reportPrivateImportUsage]
+                _, clipped, _ = attack(fmodel, data.tensor, target, epsilons=params.epsilon)
                 __perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
                 return TensorWithState(__perturbed, NORMALIZED)
             except Exception as e:
-                print(f"Foolbox BIM attack ({kind.value}) failed: {e}. Returning original data.")
-                return data # Return original data if attack fails
+                print(f"Foolbox BIM attack failed: {e}. Returning original data.")
+                return data
         else:
             raise ValueError(f"unsupported attack kind: {kind}")
 
@@ -131,37 +121,18 @@ class Runner:
             clean_data_ts_norm = self.cfg.dataset_norm.normalize(clean_data_ts)
             target_ts: Tensor = target.to(self.device).view(-1).long()
             
-            # --- Predictions for clean data ---
             logits_clean = self._to_logits(self.model(clean_data_ts_norm.tensor))
             pred_clean = logits_clean.max(1, keepdim=True)[1]
 
-            # --- Initial Attack ---
-            attacked_data_ts_norm = self._perform_attack(
-                clean_data_ts_norm, 
-                target_ts, 
-                self.cfg.attack_kind,
-                eps=self.cfg.attack_eps,
-                alpha=self.cfg.attack_alpha,
-                n=self.cfg.attack_n
-            )
+            attacked_data_ts_norm = self._perform_attack(clean_data_ts_norm, target_ts, self.cfg.attack_kind, self.cfg.attack_params)
             logits_attacked = self._to_logits(self.model(attacked_data_ts_norm.tensor))
             pred_attacked = logits_attacked.max(1, keepdim=True)[1]
 
-            # --- Re-Attack ---
-            # The target for re-attack is the prediction of the attacked image
             reattack_target = pred_attacked.view(-1)
-            reattacked_data_ts_norm = self._perform_attack(
-                attacked_data_ts_norm, 
-                reattack_target, 
-                self.cfg.reattack_kind,
-                eps=self.cfg.reattack_eps,
-                alpha=self.cfg.reattack_alpha,
-                n=self.cfg.reattack_n
-            )
+            reattacked_data_ts_norm = self._perform_attack(attacked_data_ts_norm, reattack_target, self.cfg.reattack_kind, self.cfg.reattack_params)
             logits_reattacked = self._to_logits(self.model(reattacked_data_ts_norm.tensor))
             pred_reattacked = logits_reattacked.max(1, keepdim=True)[1]
 
-            # --- Denormalize and calculate L2 norms ---
             clean_data_denorm = self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor
             attacked_data_denorm = self.cfg.dataset_norm.denormalize(attacked_data_ts_norm).tensor
             reattacked_data_denorm = self.cfg.dataset_norm.denormalize(reattacked_data_ts_norm).tensor
@@ -170,7 +141,6 @@ class Runner:
             l2_attacked_vs_reattacked = torch.linalg.norm((attacked_data_denorm - reattacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
             l2_clean_vs_reattacked = torch.linalg.norm((clean_data_denorm - reattacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
 
-            # --- Yield results for each sample in the batch ---
             for j in range(current_batch_size):
                 if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                     return
@@ -178,15 +148,9 @@ class Runner:
                 reattacked_sample_denorm_ts = TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
 
                 yield (
-                    global_idx,
-                    target_ts[j].item(),
-                    pred_clean.view(-1)[j].item(),
-                    pred_attacked.view(-1)[j].item(),
-                    pred_reattacked.view(-1)[j].item(),
-                    l2_clean_vs_attacked[j].item(),
-                    l2_attacked_vs_reattacked[j].item(),
-                    l2_clean_vs_reattacked[j].item(),
-                    reattacked_sample_denorm_ts
+                    global_idx, target_ts[j].item(), pred_clean.view(-1)[j].item(), pred_attacked.view(-1)[j].item(),
+                    pred_reattacked.view(-1)[j].item(), l2_clean_vs_attacked[j].item(), l2_attacked_vs_reattacked[j].item(),
+                    l2_clean_vs_reattacked[j].item(), reattacked_sample_denorm_ts
                 )
                 global_idx += 1
 
@@ -204,6 +168,7 @@ def fraction_float(s: str) -> float:
 
 def parse_args() -> Config:
     parser = argparse.ArgumentParser(description="General Re-Attack Runner")
+    # General Configs
     parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
     parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_MNIST.value)
     parser.add_argument("--model-dir", default="./weight")
@@ -211,36 +176,47 @@ def parse_args() -> Config:
     parser.add_argument("--output-dir", type=str, default="reattacked_data")
     parser.add_argument("--num-samples", type=int, default=-1, help="Number of samples to process. -1 for all samples.")
 
-    # Initial Attack args
-    parser.add_argument("--attack-kind", choices=[a.value for a in AttackKind if a in [AttackKind.BIM, AttackKind.FGSM]], default=AttackKind.BIM.value)
+    # Attack Configs
+    parser.add_argument("--attack-kind", choices=[k.value for k in AttackKind], default=AttackKind.BIM.value)
     parser.add_argument("--attack-eps", type=fraction_float, default=0.3)
     parser.add_argument("--attack-alpha", type=fraction_float, default=0.05)
-    parser.add_argument("--attack-n", type=int, default=10)
+    parser.add_argument("--attack-n", type=int, default=10, help="Number of iterations for BIM/FoolboxBIM")
     
-    # Re-Attack args
-    parser.add_argument("--reattack-kind", choices=[a.value for a in AttackKind if a in [AttackKind.BIM, AttackKind.FGSM]], default=AttackKind.BIM.value)
+    # Re-Attack Configs
+    parser.add_argument("--reattack-kind", choices=[k.value for k in AttackKind], default=AttackKind.BIM.value)
     parser.add_argument("--reattack-eps", type=fraction_float, default=0.3)
     parser.add_argument("--reattack-alpha", type=fraction_float, default=0.05)
-    parser.add_argument("--reattack-n", type=int, default=10)
+    parser.add_argument("--reattack-n", type=int, default=10, help="Number of iterations for BIM/FoolboxBIM")
 
     args = parser.parse_args()
+
+    # Create AttackParams
+    attack_kind = AttackKind(args.attack_kind)
+    attack_params: AttackParams
+    if attack_kind == AttackKind.FGSM:
+        attack_params = FGSMAttackParam(epsilon=args.attack_eps)
+    elif attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
+        attack_params = BIMAttackParam(epsilon=args.attack_eps, alpha=args.attack_alpha, iters=args.attack_n)
+    else:
+        raise ValueError(f"Unsupported attack kind for params: {attack_kind}")
+
+    # Create Re-attackParams
+    reattack_kind = AttackKind(args.reattack_kind)
+    reattack_params: AttackParams
+    if reattack_kind == AttackKind.FGSM:
+        reattack_params = FGSMAttackParam(epsilon=args.reattack_eps)
+    elif reattack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
+        reattack_params = BIMAttackParam(epsilon=args.reattack_eps, alpha=args.reattack_alpha, iters=args.reattack_n)
+    else:
+        raise ValueError(f"Unsupported re-attack kind for params: {reattack_kind}")
+
     return Config(
-        dataset=DatasetKind(args.dataset),
-        model=ModelKind(args.model),
-        model_dir=args.model_dir,
-        batch_size=args.batch_size,
-        device=utils.get_device(),
+        dataset=DatasetKind(args.dataset), model=ModelKind(args.model), model_dir=args.model_dir,
+        batch_size=args.batch_size, device=utils.get_device(),
         dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device()),
-        output_dir=args.output_dir,
-        num_samples=args.num_samples,
-        attack_kind=AttackKind(args.attack_kind),
-        attack_eps=args.attack_eps,
-        attack_alpha=args.attack_alpha,
-        attack_n=args.attack_n,
-        reattack_kind=AttackKind(args.reattack_kind),
-        reattack_eps=args.reattack_eps,
-        reattack_alpha=args.reattack_alpha,
-        reattack_n=args.reattack_n,
+        output_dir=args.output_dir, num_samples=args.num_samples,
+        attack_kind=attack_kind, attack_params=attack_params,
+        reattack_kind=reattack_kind, reattack_params=reattack_params
     )
 
 def main():
@@ -248,59 +224,39 @@ def main():
     runner = Runner(cfg)
     result_generator = runner.run()
 
-    # --- Prepare directories and CSV ---
-    attack_name = f"{cfg.attack_kind.value}_eps{cfg.attack_eps:.3f}"
-    reattack_name = f"{cfg.reattack_kind.value}_eps{cfg.reattack_eps:.3f}"
-    output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_name, reattack_name)
+    attack_params_str = f"{cfg.attack_kind.value}_eps{cfg.attack_params.epsilon:.3f}"
+    reattack_params_str = f"{cfg.reattack_kind.value}_eps{cfg.reattack_params.epsilon:.3f}"
+    output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_params_str, reattack_params_str)
     os.makedirs(output_folder, exist_ok=True)
     
     csv_filename = os.path.join(output_folder, "reattack_results.csv")
     csv_header = [
         "index", "target_label", "pred_clean", "pred_attacked", "pred_reattacked",
-        "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked",
-        "reattacked_image_path"
+        "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked", "reattacked_image_path"
     ]
-    
     with open(csv_filename, 'w', newline='') as csvfile:
         csv.writer(csvfile).writerow(csv_header)
 
-    # --- Process results ---
-    stats = {
-        'total': 0,
-        'clean_correct': 0,
-        'attack_successful': 0,
-        'reattack_successful_to_clean': 0,
-        'reattack_successful_to_any': 0,
-    }
-
+    stats = {'total': 0, 'clean_correct': 0, 'attack_successful': 0, 'reattack_successful_to_clean': 0}
     for result_tuple in result_generator:
         (idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_ts) = result_tuple
         
         stats['total'] += 1
-        is_clean_correct = (pred_c == target)
-        if is_clean_correct:
+        if pred_c == target:
             stats['clean_correct'] += 1
             if pred_a != pred_c:
                 stats['attack_successful'] += 1
                 if pred_r == pred_c:
                     stats['reattack_successful_to_clean'] += 1
-                if pred_r != pred_a:
-                    stats['reattack_successful_to_any'] += 1
 
-        # Save image
         image_path = os.path.join(output_folder, f"idx_{idx}_target{target}_r{pred_r}.png")
         utils.save_tensor_as_image(image_ts.tensor, image_path)
         
-        # Write to CSV
         csv_row = [idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_path]
         with open(csv_filename, 'a', newline='') as csvfile:
             csv.writer(csvfile).writerow(csv_row)
 
-    # --- Print Summary ---
-    total = stats['total']
-    clean_correct = stats['clean_correct']
-    attack_successful = stats['attack_successful']
-    reattack_to_clean = stats['reattack_successful_to_clean']
+    total, clean_correct, attack_successful, reattack_to_clean = stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful_to_clean']
     
     print("\n=== Re-Attack Summary ===")
     print(f"Processed {total} samples.")
