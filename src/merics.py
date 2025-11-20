@@ -1,14 +1,6 @@
 import pandas as pd
 import io
 
-# ユーザーから提供されたCSVデータ（文字列として定義）
-csv_data = """index,target_label,prediction_before_attack,prediction_after_attack,l2_perturbation,image_filepath
-0,972,976,976,4.6606621742248535,attacked_data/imagenet/bim/eps_0.031/idx_0_label_976.png
-1,813,910,910,4.677884578704834,attacked_data/imagenet/bim/eps_0.031/idx_1_label_910.png
-2,47,47,39,4.7772417068481445,attacked_data/imagenet/bim/eps_0.031/idx_2_label_39.png
-3,973,973,677,4.683374881744385,attacked_data/imagenet/bim/eps_0.031/idx_3_label_677.png
-4,169,169,246,4.692425727844238,attacked_data/imagenet/bim/eps_0.031/idx_4_label_246.png
-5,818,650,650,4.879558086395264,attacked_data/imagenet/bim/eps_0.031/idx_5_label_650.png"""
 
 def calculate_metrics(df):
     """
