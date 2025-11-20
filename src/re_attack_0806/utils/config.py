@@ -152,7 +152,12 @@ class DataFactory:
             ds = datasets.CIFAR10('../data', train=train, download=True, transform=transform)
         elif kind == DatasetKind.IMAGE_NET:
             transform = transforms.Compose([
-                transforms.Resize((224, 224)),
+            # 1. 短辺を342にリサイズ (299より少し大きくしておくのが一般的です)
+                #    ※PyTorch公式のInception v3の推奨は Resize(299) -> CenterCrop(299) ですが、
+                #      ここではより一般的に精度が出やすい Resize(342) -> CenterCrop(299) を推奨します。
+                transforms.Resize(299), 
+                # 2. 中央の299x299を切り出す
+                transforms.CenterCrop(299), 
                 transforms.ToTensor(),
             ])
             # torchvision.datasets.ImageNet は devkit（ILSVRC2012_devkit_t12.tar.gz）や
