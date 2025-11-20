@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import csv
+import sys # parser.errorを使うため
 from PIL import Image
 from torch import Tensor
 from enum import Enum
@@ -21,35 +22,46 @@ import concurrent.futures # パフォーマンス改善のために追加
 
 from re_attack_0806 import attacks, utils
 from re_attack_0806.attacks import bim, fgsm
+# AttackParams関連をインポート
 from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm, FGSMAttackParam, BIMAttackParam, AttackParams
 from re_attack_0806.utils.normTensor import *
 
 import foolbox
 from tqdm import tqdm
 
+# --- 定数定義 ---
+DEFAULT_MODEL_DIR = "./weight"
+DEFAULT_OUTPUT_DIR = "reattacked_data"
+DEFAULT_BATCH_SIZE = 64
+DEFAULT_NUM_SAMPLES = -1
+
+
 @dataclass
 class Config:
-    dataset: DatasetKind = DatasetKind.MNIST
-    model: ModelKind = ModelKind.MORIMOTO_MNIST
-    model_dir: str = "./weight"
-    batch_size: int = 64 # パフォーマンス改善
-    device: Optional[torch.device] = None
-    dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
-    output_dir: str = "reattacked_data"
-    num_samples: int = -1
-    save_images: bool = True
+    # 必須パラメータ
+    dataset: DatasetKind
+    model: ModelKind
+    attack_kind: AttackKind
+    attack_params: AttackParams
+    reattack_kind: AttackKind
+    reattack_params: AttackParams
+    
+    # デフォルト値を持つパラメータ
+    model_dir: str
+    batch_size: int
+    output_dir: str
+    num_samples: int
+    save_images: bool
 
-    # Attack and Re-attack Configs
-    attack_kind: AttackKind = AttackKind.BIM
-    attack_params: AttackParams = field(default_factory=BIMAttackParam)
-    reattack_kind: AttackKind = AttackKind.BIM
-    reattack_params: AttackParams = field(default_factory=BIMAttackParam)
+    # デバイスと正規化情報（内部で設定）
+    device: torch.device
+    dataset_norm: DatasetNorm
 
 
 class Runner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.device = cfg.device or utils.get_device()
+        self.device = cfg.device
         self.model = ModelFactory.create(cfg.model, self.device)
         self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
         self._load_weights_if_exists(cfg.model_dir)
@@ -65,12 +77,15 @@ class Runner:
             mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
             std_list = self.cfg.dataset_norm.std.squeeze().tolist()
             preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+            # type: ignore[reportPrivateImportUsage] はfoolboxのPyTorchModelがプライベートな型を使用していることによる警告を抑制
             self.fmodel = foolbox.PyTorchModel(self.model, bounds=(0.0, 1.0), preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
 
-        if cfg.attack_kind == AttackKind.FOOLBOX_BIM and isinstance(cfg.attack_params, BIMAttackParam):
+        if cfg.attack_kind == AttackKind.FOOLBOX_BIM:
+            assert isinstance(cfg.attack_params, BIMAttackParam), "Invalid attack_params for FoolboxBIM"
             self.attack_obj = foolbox.attacks.LinfBasicIterativeAttack(steps=cfg.attack_params.iters, abs_stepsize=cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
         
-        if cfg.reattack_kind == AttackKind.FOOLBOX_BIM and isinstance(cfg.reattack_params, BIMAttackParam):
+        if cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
+            assert isinstance(cfg.reattack_params, BIMAttackParam), "Invalid reattack_params for FoolboxBIM"
             self.reattack_obj = foolbox.attacks.LinfBasicIterativeAttack(steps=cfg.reattack_params.iters, abs_stepsize=cfg.reattack_params.alpha) # type: ignore[reportPrivateImportUsage]
 
 
@@ -99,18 +114,25 @@ class Runner:
     def _perform_attack(self, data_norm: TensorWithState, target: Tensor, kind: AttackKind, params: AttackParams) -> TensorWithState:
         # このメソッドは常に正規化済みのデータを入力として受け取り、正規化済みのデータを返す
         if kind == AttackKind.BIM:
-            if not isinstance(params, BIMAttackParam): raise TypeError(f"Invalid params for BIM: {type(params)}")
+            assert isinstance(params, BIMAttackParam), "Invalid params for BIM"
             return bim.bim(data_norm, target, self.model, self.device, params.epsilon, params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
         
         elif kind == AttackKind.FGSM:
-            if not isinstance(params, FGSMAttackParam): raise TypeError(f"Invalid params for FGSM: {type(params)}")
+            assert isinstance(params, FGSMAttackParam), "Invalid params for FGSM"
             eps_norm = params.epsilon / self.cfg.dataset_norm.std.mean() # stdが複数の値を持つ場合を考慮
             return fgsm.fgsm(data_norm, eps_norm, target, self.model, self.device)
             
         elif kind == AttackKind.FOOLBOX_BIM:
-            if not isinstance(params, BIMAttackParam): raise TypeError(f"Invalid params for FoolboxBIM: {type(params)}")
+            assert isinstance(params, BIMAttackParam), "Invalid params for FoolboxBIM"
             
-            attack_obj = self.attack_obj if params == self.cfg.attack_params else self.reattack_obj
+            # attack_objまたはreattack_objを適切に選択
+            if kind == self.cfg.attack_kind:
+                attack_obj = self.attack_obj
+            elif kind == self.cfg.reattack_kind:
+                attack_obj = self.reattack_obj
+            else:
+                raise ValueError("Attack kind not recognized for foolbox object selection.")
+
             if self.fmodel is None or attack_obj is None:
                 raise RuntimeError("Foolbox model or attack object is not initialized.")
 
@@ -193,26 +215,28 @@ def fraction_float(s: str) -> float:
 
 def parse_args() -> Config:
     parser = argparse.ArgumentParser(description="General Re-Attack Runner")
-    # General Configs
-    parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], default=DatasetKind.MNIST.value)
-    parser.add_argument("--model", choices=[m.value for m in ModelKind], default=ModelKind.MORIMOTO_MNIST.value)
-    parser.add_argument("--model-dir", default="./weight")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size. Larger is faster on GPU.")
-    parser.add_argument("--output-dir", type=str, default="reattacked_data")
-    parser.add_argument("--num-samples", type=int, default=-1, help="Number of samples to process. -1 for all samples.")
+    # 必須パラメータ
+    parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], required=True, help="Dataset to use.")
+    parser.add_argument("--model", choices=[m.value for m in ModelKind], required=True, help="Model to use.")
+    parser.add_argument("--attack-kind", choices=[k.value for k in AttackKind], required=True, help="Initial attack method to use.")
+    parser.add_argument("--reattack-kind", choices=[k.value for k in AttackKind], required=True, help="Re-attack method to use.")
+
+    # デフォルト値を持つパラメータ
+    parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR, help=f"Directory for model weights (default: {DEFAULT_MODEL_DIR})")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
+    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"Directory to save reattacked images (default: {DEFAULT_OUTPUT_DIR})")
+    parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
     parser.add_argument("--no-save-images", action="store_true", help="Do not save attacked image files.")
 
-    # Attack Configs
-    parser.add_argument("--attack-kind", choices=[k.value for k in AttackKind], default=AttackKind.BIM.value)
-    parser.add_argument("--attack-eps", type=fraction_float, default=0.3)
-    parser.add_argument("--attack-alpha", type=fraction_float, default=0.05)
-    parser.add_argument("--attack-n", type=int, default=10, help="Number of iterations for BIM/FoolboxBIM")
+    # Attack Configs (必須パラメータはここでNoneとし、後に検証)
+    parser.add_argument("--attack-eps", type=fraction_float, default=None, help="Epsilon for initial attack.")
+    parser.add_argument("--attack-alpha", type=fraction_float, default=None, help="Alpha for iterative initial attacks.")
+    parser.add_argument("--attack-n", type=int, default=None, help="Number of iterations for iterative initial attacks.")
     
-    # Re-Attack Configs
-    parser.add_argument("--reattack-kind", choices=[k.value for k in AttackKind], default=AttackKind.BIM.value)
-    parser.add_argument("--reattack-eps", type=fraction_float, default=0.3)
-    parser.add_argument("--reattack-alpha", type=fraction_float, default=0.05)
-    parser.add_argument("--reattack-n", type=int, default=10, help="Number of iterations for BIM/FoolboxBIM")
+    # Re-Attack Configs (必須パラメータはここでNoneとし、後に検証)
+    parser.add_argument("--reattack-eps", type=fraction_float, default=None, help="Epsilon for re-attack.")
+    parser.add_argument("--reattack-alpha", type=fraction_float, default=None, help="Alpha for iterative re-attacks.")
+    parser.add_argument("--reattack-n", type=int, default=None, help="Number of iterations for iterative re-attacks.")
 
     args = parser.parse_args()
 
@@ -220,39 +244,64 @@ def parse_args() -> Config:
     attack_kind = AttackKind(args.attack_kind)
     attack_params: AttackParams
     if attack_kind == AttackKind.FGSM:
+        if args.attack_eps is None: parser.error("FGSM initial attack requires --attack-eps.")
         attack_params = FGSMAttackParam(epsilon=args.attack_eps, batch_size=args.batch_size)
     elif attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
+        if args.attack_eps is None or args.attack_alpha is None or args.attack_n is None:
+            parser.error(f"{attack_kind.value} initial attack requires --attack-eps, --attack-alpha, and --attack-n.")
         attack_params = BIMAttackParam(epsilon=args.attack_eps, alpha=args.attack_alpha, iters=args.attack_n, batch_size=args.batch_size)
     else:
-        raise ValueError(f"Unsupported attack kind for params: {attack_kind}")
+        raise ValueError(f"Unsupported initial attack kind for params: {attack_kind}")
 
     # Create Re-attackParams
     reattack_kind = AttackKind(args.reattack_kind)
     reattack_params: AttackParams
     if reattack_kind == AttackKind.FGSM:
+        if args.reattack_eps is None: parser.error("FGSM re-attack requires --reattack-eps.")
         reattack_params = FGSMAttackParam(epsilon=args.reattack_eps, batch_size=args.batch_size)
     elif reattack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
+        if args.reattack_eps is None or args.reattack_alpha is None or args.reattack_n is None:
+            parser.error(f"{reattack_kind.value} re-attack requires --reattack-eps, --reattack-alpha, and --reattack-n.")
         reattack_params = BIMAttackParam(epsilon=args.reattack_eps, alpha=args.reattack_alpha, iters=args.reattack_n, batch_size=args.batch_size)
     else:
         raise ValueError(f"Unsupported re-attack kind for params: {reattack_kind}")
 
+    dataset = DatasetKind(args.dataset)
+    device = utils.get_device()
+
     return Config(
-        dataset=DatasetKind(args.dataset), model=ModelKind(args.model), model_dir=args.model_dir,
-        batch_size=args.batch_size, device=utils.get_device(),
-        dataset_norm=DatasetNorm(DatasetKind(args.dataset), utils.get_device()),
-        output_dir=args.output_dir, num_samples=args.num_samples,
+        dataset=dataset,
+        model=ModelKind(args.model),
+        model_dir=args.model_dir,
+        batch_size=args.batch_size,
+        output_dir=args.output_dir,
+        num_samples=args.num_samples,
         save_images=not args.no_save_images,
-        attack_kind=attack_kind, attack_params=attack_params,
-        reattack_kind=reattack_kind, reattack_params=reattack_params
+        device=device,
+        dataset_norm=DatasetNorm(dataset, device),
+        attack_kind=attack_kind,
+        attack_params=attack_params,
+        reattack_kind=reattack_kind,
+        reattack_params=reattack_params
     )
 
 def main():
     cfg = parse_args()
+    # parse_args内で検証されるため、ここでの検証は不要
+    
     runner = Runner(cfg)
     result_generator = runner.run()
 
-    attack_params_str = f"{cfg.attack_kind.value}_eps{cfg.attack_params.epsilon:.3f}"
-    reattack_params_str = f"{cfg.reattack_kind.value}_eps{cfg.reattack_params.epsilon:.3f}"
+    # ----- 統計情報の初期化とパス生成 -----
+    stats = {'total': 0, 'clean_correct': 0, 'attack_successful': 0, 'reattack_successful': 0, 'reattack_successful_to_clean': 0}
+    
+    # epsilonをattack_paramsから取得
+    attack_eps_str = f"{cfg.attack_params.epsilon:.3f}"
+    reattack_eps_str = f"{cfg.reattack_params.epsilon:.3f}"
+
+    attack_params_str = f"{cfg.attack_kind.value}_eps{attack_eps_str}"
+    reattack_params_str = f"{cfg.reattack_kind.value}_eps{reattack_eps_str}"
+    
     output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_params_str, reattack_params_str)
     os.makedirs(output_folder, exist_ok=True)
     
@@ -261,8 +310,6 @@ def main():
         "index", "target_label", "pred_clean", "pred_attacked", "pred_reattacked",
         "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked", "reattacked_image_path"
     ]
-    
-    stats = {'total': 0, 'clean_correct': 0, 'attack_successful': 0, 'reattack_successful_to_clean': 0}
     
     # パフォーマンス改善: ThreadPoolExecutorとCSV writerをループの外で初期化
     with concurrent.futures.ThreadPoolExecutor() as executor, open(csv_filename, 'w', newline='') as csvfile:
@@ -279,6 +326,10 @@ def main():
                 stats['clean_correct'] += 1
                 if pred_a != pred_c:
                     stats['attack_successful'] += 1
+                    # 再攻撃が成功し、元の予測から変わった場合 (ターゲット化された再攻撃の成功)
+                    if pred_r != pred_a:
+                         stats['reattack_successful'] += 1
+                    # 再攻撃が成功し、元のクリーンな予測に戻った場合
                     if pred_r == pred_c:
                         stats['reattack_successful_to_clean'] += 1
 
@@ -301,7 +352,8 @@ def main():
                 print(f"Image saving for index {idx} generated an exception: {exc}")
 
 
-    total, clean_correct, attack_successful, reattack_to_clean = stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful_to_clean']
+    total, clean_correct, attack_successful, reattack_successful, reattack_to_clean = \
+        stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful'], stats['reattack_successful_to_clean']
     
     print("\n=== Re-Attack Summary ===")
     print(f"Processed {total} samples.")
@@ -309,6 +361,7 @@ def main():
     if clean_correct > 0:
         print(f"Initial Attack Success Rate: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
         if attack_successful > 0:
+            print(f"Re-Attack Success Rate (changed from attacked): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
             print(f"Re-Attack Success Rate (to Clean): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
     print(f"Results saved to {csv_filename}")
     print("=========================")
