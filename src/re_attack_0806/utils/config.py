@@ -107,6 +107,8 @@ class DatasetNorm:
 
         self.mean = torch.tensor(mean, device=self.device, dtype=self.dtype).view(1, -1, 1, 1)
         self.std = torch.tensor(std, device=self.device, dtype=self.dtype).view(1, -1, 1, 1)
+        self.mean_list = mean
+        self.std_list = std
 
     def normalize(self, x: DenormTensor) -> NormTensor:
         """非正規化テンソルを受け取り、正規化テンソルを返す。"""

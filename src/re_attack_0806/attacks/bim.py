@@ -42,8 +42,20 @@ def bim(input_norm: NormTensor,
     eps_norm = eps / std_t
     alpha_norm = alpha / std_t
 
+    # もっともfoolbox実装に近づけるため，min/max_valも正規化する 
     min_val_norm = (min_val - mean_t) / std_t
     max_val_norm = (max_val - mean_t) / std_t
+
+    # eps_norm = torch.tensor(eps).to(device)
+    # alpha_norm = torch.tensor(alpha).to(device)
+    # min_val_norm = torch.tensor(min_val_norm).to(device)
+    # max_val_norm = torch.tensor(max_val_norm).to(device)
+
+    # eps_norm = eps
+    # alpha_norm = alpha
+    # min_val_norm = min_val
+    # max_val_norm = max_val
+
 
     # ターゲット整形
     if target is not None:

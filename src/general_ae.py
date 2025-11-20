@@ -88,10 +88,7 @@ class Runner:
         fmodel = None
         foolbox_attack = None
         if self.cfg.attack == AttackKind.FOOLBOX_BIM:
-            # DatasetNormから動的に正規化パラメータを取得
-            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+            preprocessing = dict(mean=self.cfg.dataset_norm.mean_list, std=self.cfg.dataset_norm.std_list, axis=-3)
             bounds = (0.0, 1.0)
             fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
             foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
@@ -133,9 +130,15 @@ class Runner:
                 try:
                     # パフォーマンス改善：初期化済みのモデルと攻撃を使用
                     assert fmodel is not None and foolbox_attack is not None, "Foolbox model and attack should have been initialized"
-                    raw, clipped, is_adv = foolbox_attack(fmodel, data_ts_norm.tensor, target_ts, epsilons=self.cfg.epsilon)
-                    __perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-                    perturbed = TensorWithState(__perturbed, NORMALIZED)
+                    
+                    # foolboxには[0,1]の範囲の非正規化データを渡す
+                    # foolbox内部でpreprocessingに指定した方法で正規化される
+                    raw, clipped, is_adv = foolbox_attack(fmodel, data_ts.tensor, target_ts, epsilons=self.cfg.epsilon)
+                    
+                    # foolboxの出力(clipped)は非正規化データなので、後続の処理のために正規化する
+                    __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+                    perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
+                    perturbed = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
                 except Exception as e:
                     print(f"Foolbox BIM attack failed: {e}")
                     continue
