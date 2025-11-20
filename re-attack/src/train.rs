@@ -22,7 +22,7 @@ use burn::{
     },
 };
 
-#[derive(Config)]
+#[derive(Config, Debug)]
 pub struct MnistTrainingConfig {
     pub model: ResNet18Config,
     #[config(default = 10)]
@@ -54,7 +54,7 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
 
     // let config_optimizer = AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(5e-5)));
     // let config = MnistTrainingConfig::new(config_optimizer);
-    B::seed(config.seed);
+    B::seed(&device, config.seed);
 
     // let model = ResNet18::<B>::new(&device);
 
@@ -92,7 +92,6 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
             Split::Valid,
             StoppingCondition::NoImprovementSince { n_epochs: 1 },
         ))
-        .devices(vec![device.clone()])
         .num_epochs(config.num_epochs)
         .summary()
         .build(
@@ -104,6 +103,7 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 
     model_trained
+        .model
         .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Failed to save trained model");
 }

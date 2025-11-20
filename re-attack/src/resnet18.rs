@@ -1,6 +1,6 @@
 use burn::{
     nn::{
-        BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
+        BatchNorm, BatchNormConfig, Gelu, Linear, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
         loss::CrossEntropyLossConfig,
         pool::{AdaptiveAvgPool2d, AdaptiveAvgPool2dConfig, MaxPool2d, MaxPool2dConfig},
@@ -19,8 +19,8 @@ const NUM_CLASSES: usize = 10;
 pub struct ResNet18<B: Backend> {
     // resnet_input: ResNetInput<B>,
     conv1: Conv2d<B>,
-    bn1: BatchNorm<B, 2>,
-    activation: Relu,
+    bn1: BatchNorm<B>,
+    activation: Gelu,
     maxpool: MaxPool2d,
 
     layer1: ResNetLayer<B>,
@@ -35,7 +35,7 @@ impl<B: Backend> ResNet18<B> {
     pub fn new(device: &B::Device) -> Self {
         ResNet18Config::new(NUM_CLASSES, 1, 64).init(device)
     }
-    #[instrument(skip(self, x))]
+    // #[instrument(skip(self, x))]
     pub fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 2> {
         let x = self.conv1.forward(x);
         let x = self.bn1.forward(x);
@@ -101,7 +101,7 @@ impl ResNet18Config {
                 })
                 .init(device),
             bn1: BatchNormConfig::new(64).init(device),
-            activation: Relu::new(),
+            activation: Gelu::new(),
             maxpool: MaxPool2dConfig::new([3, 3])
                 .with_strides([2, 2])
                 .with_padding(PaddingConfig2d::Explicit(1, 1))
@@ -123,7 +123,7 @@ struct ResNetLayer<B: Backend> {
 }
 
 impl<B: Backend> ResNetLayer<B> {
-    #[instrument()]
+    // #[instrument()]
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         let x = self.blocks[0].forward(x);
         let x = self.blocks[1].forward(x);
@@ -165,15 +165,15 @@ impl ResNetLayerConfig {
 struct BasicBlock<B: Backend> {
     conv1: Conv2d<B>,
     // 正規化レイヤ
-    bn1: BatchNorm<B, 2>,
+    bn1: BatchNorm<B>,
     conv2: Conv2d<B>,
-    bn2: BatchNorm<B, 2>,
+    bn2: BatchNorm<B>,
     shortcut: Option<DownSample<B>>,
-    activation: Relu,
+    activation: Gelu,
 }
 
 impl<B: Backend> BasicBlock<B> {
-    #[instrument()]
+    // #[instrument()]
     fn forward(&self, x: Tensor<B, 4>) -> Tensor<B, 4> {
         // デバッグ: 各経路の形状を出力して不整合箇所を特定する
         let identity = x.clone();
@@ -250,7 +250,7 @@ impl BasicBlockConfig {
             bn2: BatchNormConfig::new(self.out_planes).init(device),
             // Use the block's input/output channel sizes for the shortcut 1x1 conv
             shortcut: self.downsample.as_ref().map(|ds| ds.init(device)),
-            activation: Relu::new(),
+            activation: Gelu::new(),
         }
     }
 }
@@ -258,7 +258,7 @@ impl BasicBlockConfig {
 #[derive(Module, Debug)]
 struct DownSample<B: Backend> {
     conv: Conv2d<B>,
-    bn: BatchNorm<B, 2>,
+    bn: BatchNorm<B>,
 }
 
 impl<B: Backend> DownSample<B> {
@@ -297,5 +297,13 @@ impl<B: AutodiffBackend> TrainStep<MnistBatch<B>, ClassificationOutput<B>> for R
 impl<B: Backend> ValidStep<MnistBatch<B>, ClassificationOutput<B>> for ResNet18<B> {
     fn step(&self, item: MnistBatch<B>) -> ClassificationOutput<B> {
         self.forward_classification(item)
+    }
+}
+
+use super::bim::ClassificationModel;
+
+impl<B: Backend> ClassificationModel<B> for ResNet18<B> {
+    fn forward(&self, input: Tensor<B, 4>) -> Tensor<B, 2> {
+        self.forward(input)
     }
 }

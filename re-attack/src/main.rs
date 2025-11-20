@@ -2,7 +2,7 @@ use burn::backend::{
     Autodiff,
     wgpu::{Metal, WgpuDevice},
 };
-use re_attack::train;
+// use re_attack::train;
 
 fn main() {
     // tracing_subscriber::fmt().init();
