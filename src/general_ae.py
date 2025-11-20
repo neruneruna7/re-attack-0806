@@ -17,6 +17,7 @@ from enum import Enum
 import argparse
 import re_attack_0806
 from copy import deepcopy
+import concurrent.futures # パフォーマンス改善のために追加
 
 from re_attack_0806 import attacks, utils
 from re_attack_0806.attacks import bim, fgsm, linfbim
@@ -38,7 +39,7 @@ class Config:
     epsilon: float = 0.3
     alpha: float = 0.05
     n: int = 10
-    batch_size: int = 1
+    batch_size: int = 64 # パフォーマンス改善のためデフォルト値を変更
     device: Optional[torch.device] = None
     dataset_norm: DatasetNorm = DatasetNorm(DatasetKind.MNIST, torch.device("cpu"))
     save_attacked_images: bool = True # 攻撃後の画像を保存するかどうかのフラグ
@@ -83,6 +84,19 @@ class Runner:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
         self.model.eval()
 
+        # パフォーマンス改善：foolboxモデルの初期化をループ外に移動
+        fmodel = None
+        foolbox_attack = None
+        if self.cfg.attack == AttackKind.FOOLBOX_BIM:
+            # DatasetNormから動的に正規化パラメータを取得
+            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
+            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
+            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+            bounds = (0.0, 1.0)
+            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
+
+
         global_idx = 0
         for i, (data, target) in tqdm(enumerate(self.test_loader)):
             # # デバッグ用に処理するサンプル数を100に制限
@@ -116,12 +130,10 @@ class Runner:
                     self.cfg.dataset_norm.std,
                 )
             elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                preprocessing = dict(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010], axis=-3)
-                bounds = (0.0, 1.0)
                 try:
-                    fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-                    attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.n, abs_stepsize=self.cfg.alpha) # type: ignore[reportPrivateImportUsage]
-                    raw, clipped, is_adv = attack(fmodel, data_ts_norm.tensor, target_ts, epsilons=self.cfg.epsilon)
+                    # パフォーマンス改善：初期化済みのモデルと攻撃を使用
+                    assert fmodel is not None and foolbox_attack is not None, "Foolbox model and attack should have been initialized"
+                    raw, clipped, is_adv = foolbox_attack(fmodel, data_ts_norm.tensor, target_ts, epsilons=self.cfg.epsilon)
                     __perturbed = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
                     perturbed = TensorWithState(__perturbed, NORMALIZED)
                 except Exception as e:
@@ -188,7 +200,7 @@ def parse_args() -> Config:
     parser.add_argument("--epsilon", type=fraction_float, default=0.3)
     parser.add_argument("--alpha", type=fraction_float, default=0.05)
     parser.add_argument("--n", type=int, default=10, help="number of iterations for BIM")
-    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--batch-size", type=int, default=64, help="Batch size for processing data. Larger is faster on GPU.") # パフォーマンス改善
     parser.add_argument("--save-attacked-images", action="store_true", default=True,
                         help="Save attacked images to specified output directory")
     parser.add_argument("--output-dir", type=str, default="attacked_data",
@@ -232,39 +244,31 @@ def main():
     
     csv_filename = os.path.join(output_folder, "attack_results.csv")
     
-    with open(csv_filename, 'w', newline='') as csvfile:
+    # パフォーマンス改善: ThreadPoolExecutorとCSV writerをループの外で初期化
+    with concurrent.futures.ThreadPoolExecutor() as executor, \
+         open(csv_filename, 'w', newline='') as csvfile:
+        
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(["index", "target_label", "prediction_before_attack", "prediction_after_attack", "l2_perturbation", "image_filepath"])
 
-    for idx, target, before, after, ex, m in result_generator:
-        total += 1
-        # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
-        # ここでは以前のモデルの初期予測を用いて比較することを想定
-        if before == target:
-            clean_acc_total += 1
-            mean_mean_perturb += m
-            if after != before:
-                fail += 1
+        for idx, target, before, after, ex, m in result_generator:
+            total += 1
+            # 元の正解ラベルが必要; 必要ならデータセットから再読み込みしても良い
+            # ここでは以前のモデルの初期予測を用いて比較することを想定
+            if before == target:
+                clean_acc_total += 1
+                mean_mean_perturb += m
+                if after != before:
+                    fail += 1
 
-        output_filename = "" # 画像ファイルパスの初期化
-        # 攻撃後の画像を保存する処理
-        if cfg.save_attacked_images:
-            # ex は perturbed.tensor.squeeze().detach().cpu() なので非正規化画像
-            # ファイル名を構築
-            # 例: data/attacked_images/mnist/bim/eps_0.300/idx_0_label_5.png
-            output_filename = os.path.join(output_folder, f"idx_{idx}_label_{after}.png")
+            output_filename = "" # 画像ファイルパスの初期化
+            # 攻撃後の画像を保存する処理
+            if cfg.save_attacked_images:
+                output_filename = os.path.join(output_folder, f"idx_{idx}_label_{after}.png")
+                # パフォーマンス改善: 画像保存を非同期で実行
+                executor.submit(utils.save_tensor_as_image, ex.tensor, output_filename)
             
-            # utils.save_tensor_as_image を使用
-            # save_tensor_as_image はテンソルを0-1にクリップしてuint8に変換
-            # ex は既に非正規化されたテンソルなのでそのまま渡せる
-            # ただし、保存はPNGで行うため、テンソルの状態は問わない
-            # utils.save_tensor_as_image は `Tensor` を受け取るので `ex` をそのまま渡す
-            utils.save_tensor_as_image(ex.tensor, output_filename)
-            # print(f"Saved attacked image to {output_filename}")
-        
-        # CSVに結果を追記
-        with open(csv_filename, 'a', newline='') as csvfile:
-            csv_writer = csv.writer(csvfile)
+            # CSVに結果を追記
             csv_writer.writerow([idx, target, before, after, m, output_filename])
 
 
