@@ -97,8 +97,8 @@ class Runner:
             std_list = self.cfg.dataset_norm.std.squeeze().tolist()
             preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
             bounds = (0.0, 1.0)
-            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device)
-            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha)
+            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
 
         global_idx = 0
         for i, (data, target) in tqdm(enumerate(self.test_loader), desc="Attacking"):
