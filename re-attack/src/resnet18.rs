@@ -1,6 +1,6 @@
 use burn::{
     nn::{
-        BatchNorm, BatchNormConfig, Gelu, Linear, LinearConfig, PaddingConfig2d, Relu,
+        Gelu, GroupNorm, GroupNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
         loss::CrossEntropyLossConfig,
         pool::{AdaptiveAvgPool2d, AdaptiveAvgPool2dConfig, MaxPool2d, MaxPool2dConfig},
@@ -19,7 +19,7 @@ const NUM_CLASSES: usize = 10;
 pub struct ResNet18<B: Backend> {
     // resnet_input: ResNetInput<B>,
     conv1: Conv2d<B>,
-    bn1: BatchNorm<B>,
+    bn1: GroupNorm<B>,
     activation: Gelu,
     maxpool: MaxPool2d,
 
@@ -100,7 +100,7 @@ impl ResNet18Config {
                     fan_out_only: true,
                 })
                 .init(device),
-            bn1: BatchNormConfig::new(64).init(device),
+            bn1: GroupNormConfig::new(8, 64).init(device),
             activation: Gelu::new(),
             maxpool: MaxPool2dConfig::new([3, 3])
                 .with_strides([2, 2])
@@ -165,9 +165,9 @@ impl ResNetLayerConfig {
 struct BasicBlock<B: Backend> {
     conv1: Conv2d<B>,
     // 正規化レイヤ
-    bn1: BatchNorm<B>,
+    bn1: GroupNorm<B>,
     conv2: Conv2d<B>,
-    bn2: BatchNorm<B>,
+    bn2: GroupNorm<B>,
     shortcut: Option<DownSample<B>>,
     activation: Gelu,
 }
@@ -242,12 +242,12 @@ impl BasicBlockConfig {
                 .with_padding(PaddingConfig2d::Explicit(1, 1))
                 .with_bias(false)
                 .init(device),
-            bn1: BatchNormConfig::new(self.out_planes).init(device),
+            bn1: GroupNormConfig::new(8, self.out_planes).init(device),
             conv2: Conv2dConfig::new([self.out_planes, self.out_planes], [3, 3])
                 .with_padding(PaddingConfig2d::Explicit(1, 1))
                 .with_bias(false)
                 .init(device),
-            bn2: BatchNormConfig::new(self.out_planes).init(device),
+            bn2: GroupNormConfig::new(8, self.out_planes).init(device),
             // Use the block's input/output channel sizes for the shortcut 1x1 conv
             shortcut: self.downsample.as_ref().map(|ds| ds.init(device)),
             activation: Gelu::new(),
@@ -258,7 +258,7 @@ impl BasicBlockConfig {
 #[derive(Module, Debug)]
 struct DownSample<B: Backend> {
     conv: Conv2d<B>,
-    bn: BatchNorm<B>,
+    bn: GroupNorm<B>,
 }
 
 impl<B: Backend> DownSample<B> {
@@ -281,7 +281,7 @@ impl DownSampleConfig {
             conv: Conv2dConfig::new([self.in_planes, self.out_planes], [1, 1])
                 .with_stride(self.stride)
                 .init(device),
-            bn: BatchNormConfig::new(self.out_planes).init(device),
+            bn: GroupNormConfig::new(8, self.out_planes).init(device),
         }
     }
 }

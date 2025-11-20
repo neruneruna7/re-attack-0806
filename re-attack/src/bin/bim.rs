@@ -1,3 +1,4 @@
+use burn::backend::wgpu::graphics::WebGpu;
 use burn::data::dataset::vision::MnistDataset;
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{LinearConfig, PaddingConfig2d, conv::Conv2dConfig};
@@ -17,7 +18,7 @@ use re_attack::ARTIFACT_DIR;
 use re_attack::resnet18::ResNet18;
 use re_attack::simple_mlp::SimpleMlp;
 
-type Backend = NdArray;
+type Backend = Wgpu;
 type AutodiffBackend = Autodiff<Backend>;
 
 fn main() {
@@ -25,15 +26,15 @@ fn main() {
     tracing_subscriber::fmt().init();
     // pwdを表示する
 
-    let device = burn::backend::ndarray::NdArrayDevice::Cpu;
-
+    // let device = burn::backend::ndarray::NdArrayDevice::Cpu;
+    let device = WgpuDevice::default();
     println!("Loading MNIST dataset...");
     let dataset = MnistDataset::test(); // テストデータをダウンロード
     let item = dataset.iter().next().unwrap(); // 最初の画像（通常は '7'）を取得
 
     println!("Initializing Model...");
-    // let model = ResNet18::<AutodiffBackend>::new(&device);
-    let model = SimpleMlp::<AutodiffBackend>::new(&device);
+    let model = ResNet18::<AutodiffBackend>::new(&device);
+    // let model = SimpleMlp::<AutodiffBackend>::new(&device);
     // let model = load::<AutodiffBackend>(ARTIFACT_DIR, &device);
 
     // データの前処理 (Normalize)
