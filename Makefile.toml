@@ -59,12 +59,12 @@ args = ["run", "src/general_ae.py", "--dataset", "mnist", "--model", "ploof", "-
 description = "Attack InceptionV3 model on ImageNet with BIM"
 category = "Attacks"
 command = "uv"
-args = ["run", "src/general_ae.py", "--dataset", "imagenet", "--model", "inception-v3", "--attack", "bim", "--epsilon", "8/255", "--alpha", "1/255", "--n", "10", "--batch-size", "16", "--num-samples", "256"]
+args = ["run", "src/general_ae.py", "--dataset", "imagenet", "--model", "inception-v3", "--attack", "bim", "--epsilon", "8/255", "--alpha", "1/255", "--n", "10", "--batch-size", "16", "--num-samples", "1"]
 # バッチサイズが64だとメモリ不足になる
 
 [tasks.attack-foolbox-bim-advo]
 description = "Attack InceptionV3 model on ImageNet with BIM"
 category = "Attacks"
 command = "uv"
-args = ["run", "src/general_ae.py", "--dataset", "imagenet", "--model", "inception-v3", "--attack", "foolbox-bim", "--epsilon", "8/255", "--alpha", "1/255", "--n", "10", "--batch-size", "16", "--num-samples", "256"]
+args = ["run", "src/general_ae.py", "--dataset", "imagenet", "--model", "inception-v3", "--attack", "foolbox-bim", "--epsilon", "8/255", "--alpha", "1/255", "--n", "10", "--batch-size", "16", "--num-samples", "1"]
 # バッチサイズが64だとメモリ不足になる

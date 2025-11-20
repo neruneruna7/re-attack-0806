@@ -185,4 +185,4 @@ class DataFactory:
 
         else:
             raise ValueError(f"unsupported dataset kind: {kind}")
-        return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True)
+        return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False)

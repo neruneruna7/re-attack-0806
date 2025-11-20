@@ -39,22 +39,12 @@ def bim(input_norm: NormTensor,
     else:
         orig_norm_inner = orig_norm.tensor.clone().detach().to(device)
 
-    eps_norm = eps / std_t
-    alpha_norm = alpha / std_t
-
     # もっともfoolbox実装に近づけるため，min/max_valも正規化する 
+    # 正規化しないと，出力される画像が異様になる
+    # 正規化するのが正解と思われる
     min_val_norm = (min_val - mean_t) / std_t
     max_val_norm = (max_val - mean_t) / std_t
 
-    # eps_norm = torch.tensor(eps).to(device)
-    # alpha_norm = torch.tensor(alpha).to(device)
-    # min_val_norm = torch.tensor(min_val_norm).to(device)
-    # max_val_norm = torch.tensor(max_val_norm).to(device)
-
-    # eps_norm = eps
-    # alpha_norm = alpha
-    # min_val_norm = min_val
-    # max_val_norm = max_val
 
 
     # ターゲット整形
@@ -77,12 +67,12 @@ def bim(input_norm: NormTensor,
         if grad_norm is None:
             raise RuntimeError("bim: gradient is None")
 
-        perturbed_norm = perturbed_norm.detach() + alpha_norm * grad_norm.sign()
+        perturbed_norm = perturbed_norm.detach() + alpha * grad_norm.sign()
 
         # delta を elementwise に clamp する（eps_norm はテンソルでもスカラーでも対応）
         # 最終的に摂動の大きさをepsilonで制限する
         delta = perturbed_norm - orig_norm_inner
-        delta = torch.clamp(delta, -eps_norm, eps_norm)
+        delta = torch.clamp(delta, -eps, eps)
         perturbed_norm = (orig_norm_inner + delta).detach()
         # --- 追加: 画像の値域クリップ (Domain Constraint) ---
         # ※ NormTensorが正規化されている場合、min/max_valも正規化後の値を渡す必要がある
