@@ -15,6 +15,8 @@ def get_device() -> torch.device:
     print("5. 実行デバイスを自動判別します...")
     accelerator = torch.device("cpu")
     # TPUランタイムが有効かチェック
+    tpu_addr = os.environ.get('COLAB_TPU_ADDR')
+    print(f"TPU Address: {tpu_addr}")
     if 'COLAB_TPU_ADDR' in os.environ:
         # TPUが利用可能
         import torch_xla.core.xla_model as xm
@@ -30,6 +32,7 @@ def get_device() -> torch.device:
         print("ハードウェアアクセラレータ: GPU (MPS) を使用します。")
     else:
         accelerator = torch.device("cpu")
+        print("ハードウェアアクセラレータ: CPU を使用します。")
     # print("ハードウェアアクセラレータ: CPU を使用します。")
     # if torch.accelerator.is_available():
     #     accelerator = torch.accelerator.current_accelerator()
