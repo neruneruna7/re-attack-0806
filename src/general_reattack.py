@@ -74,12 +74,13 @@ class Runner:
         self.attack_obj = None
         self.reattack_obj = None
 
-        if cfg.attack_kind == AttackKind.FOOLBOX_BIM or cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
+        if cfg.attack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM] or cfg.reattack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
             mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
             std_list = self.cfg.dataset_norm.std.squeeze().tolist()
             preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
             # type: ignore[reportPrivateImportUsage] はfoolboxのPyTorchModelがプライベートな型を使用していることによる警告を抑制
             self.fmodel = foolbox.PyTorchModel(self.model, bounds=(0.0, 1.0), preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+            
 
         if cfg.attack_kind == AttackKind.FOOLBOX_BIM:
             assert isinstance(cfg.attack_params, BIMAttackParam), "Invalid attack_params for FoolboxBIM"
@@ -88,6 +89,13 @@ class Runner:
         if cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
             assert isinstance(cfg.reattack_params, BIMAttackParam), "Invalid reattack_params for FoolboxBIM"
             self.reattack_obj = foolbox.attacks.LinfBasicIterativeAttack(steps=cfg.reattack_params.iters, abs_stepsize=cfg.reattack_params.alpha) # type: ignore[reportPrivateImportUsage]
+
+        if cfg.attack_kind == AttackKind.FOOLBOX_FGSM:
+            assert isinstance(cfg.attack_params, FGSMAttackParam), "Invalid attack_params for FoolboxFGSM"
+            self.attack_obj = foolbox.attacks.FGSM() # type: ignore[reportPrivateImportUsage]
+        if cfg.reattack_kind == AttackKind.FOOLBOX_FGSM:
+            assert isinstance(cfg.reattack_params, FGSMAttackParam), "Invalid reattack_params for FoolboxFGSM"
+            self.reattack_obj = foolbox.attacks.FGSM() # type: ignore[reportPrivateImportUsage]
 
 
     def _load_weights_if_exists(self, model_dir: str):
@@ -149,6 +157,35 @@ class Runner:
             except Exception as e:
                 print(f"Foolbox BIM attack failed: {e}. Returning original data.")
                 return data_norm # 失敗した場合は元の正規化データを返す
+        elif kind == AttackKind.FOOLBOX_FGSM:
+            assert isinstance(params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+
+            # attack_objまたはreattack_objを適切に選択
+            if kind == self.cfg.attack_kind:
+                attack_obj = self.attack_obj
+            elif kind == self.cfg.reattack_kind:
+                attack_obj = self.reattack_obj
+            else:
+                raise ValueError("Attack kind not recognized for foolbox object selection.")
+
+            if self.fmodel is None or attack_obj is None:
+                raise RuntimeError("Foolbox model or attack object is not initialized.")
+
+            # バグ修正: foolboxには非正規化データを渡す
+            data_denorm = self.cfg.dataset_norm.denormalize(data_norm)
+
+            try:
+                _, clipped, _ = attack_obj(self.fmodel, data_denorm.tensor, target)
+                
+                # バグ修正: foolboxの出力(非正規化)を後続処理のため正規化する
+                __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+                perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
+                return self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
+
+            except Exception as e:
+                print(f"Foolbox FGSM attack failed: {e}. Returning original data.")
+                return data_norm # 失敗した場合は元の正規化データを返す
+
         else:
             raise ValueError(f"unsupported attack kind: {kind}")
 
@@ -243,7 +280,7 @@ def parse_args() -> Config:
     # Create AttackParams
     attack_kind = AttackKind(args.attack_kind)
     attack_params: AttackParams
-    if attack_kind == AttackKind.FGSM:
+    if attack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
         if args.attack_eps is None: parser.error("FGSM initial attack requires --attack-eps.")
         attack_params = FGSMAttackParam(epsilon=args.attack_eps, batch_size=args.batch_size)
     elif attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
@@ -256,7 +293,7 @@ def parse_args() -> Config:
     # Create Re-attackParams
     reattack_kind = AttackKind(args.reattack_kind)
     reattack_params: AttackParams
-    if reattack_kind == AttackKind.FGSM:
+    if reattack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
         if args.reattack_eps is None: parser.error("FGSM re-attack requires --reattack-eps.")
         reattack_params = FGSMAttackParam(epsilon=args.reattack_eps, batch_size=args.batch_size)
     elif reattack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:

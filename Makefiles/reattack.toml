@@ -1,14 +1,14 @@
-[tasks.reattack-morimoto-mnist-bim-fgsm]
-    description="Re-attack Morimoto MNIST model with BIM -> FGSM"
+[tasks.reattack-morimoto-cifar10-bim-foolbox-fgsm]
+    description="Re-attack Morimoto CIFAR10 model with BIM -> Foolbox FGSM"
     category="Re-Attacks"
     command="uv"
     args=[
         "run",
         "src/general_reattack.py",
         "--dataset",
-        "mnist",
+        "cifar10",
         "--model",
-        "morimoto-mnist",
+        "morimoto-cifar10",
         "--attack-kind",
         "bim",
         "--attack-eps",
@@ -18,7 +18,7 @@
         "--attack-n",
         "10",
         "--reattack-kind",
-        "fgsm",
+        "foolbox-fgsm",
         "--reattack-eps",
         "0.3",
         "--batch-size",
@@ -26,17 +26,17 @@
     ]
 
 
-[tasks.reattack-morimoto-mnist-bim-bim]
-    description="Re-attack Morimoto MNIST model with BIM"
+[tasks.reattack-morimoto-cifar10-bim-bim]
+    description="Re-attack Morimoto CIFAR10 model with BIM"
     category="Re-Attacks"
     command="uv"
     args=[
         "run",
         "src/general_reattack.py",
         "--dataset",
-        "mnist",
+        "cifar10",
         "--model",
-        "morimoto-mnist",
+        "morimoto-cifar10",
         "--attack-kind",
         "bim",
         "--attack-eps",
@@ -57,42 +57,42 @@
         "128",
     ]
 
-[tasks.reattack-morimoto-mnist-fgsm-fgsm]
-    description="Re-attack Morimoto MNIST model with FGSM -> FGSM"
+[tasks.reattack-morimoto-cifar10-foolbox-fgsm-foolbox-fgsm]
+    description="Re-attack Morimoto CIFAR10 model with Foolbox FGSM -> Foolbox FGSM"
     category="Re-Attacks"
     command="uv"
     args=[
         "run",
         "src/general_reattack.py",
         "--dataset",
-        "mnist",
+        "cifar10",
         "--model",
-        "morimoto-mnist",
+        "morimoto-cifar10",
         "--attack-kind",
-        "fgsm",
+        "foolbox-fgsm",
         "--attack-eps",
         "0.3",
         "--reattack-kind",
-        "fgsm",
+        "foolbox-fgsm",
         "--reattack-eps",
         "0.3",
         "--batch-size",
         "128",
     ]
 
-[tasks.reattack-morimoto-mnist-fgsm-bim]
-    description="Re-attack Morimoto MNIST model with FGSM -> BIM"
+[tasks.reattack-morimoto-cifar10-foolbox-fgsm-bim]
+    description="Re-attack Morimoto CIFAR10 model with FGSM -> BIM"
     category="Re-Attacks"
     command="uv"
     args=[
         "run",
         "src/general_reattack.py",
         "--dataset",
-        "mnist",
+        "cifar10",
         "--model",
-        "morimoto-mnist",
+        "morimoto-cifar10",
         "--attack-kind",
-        "fgsm",
+        "foolbox-fgsm",
         "--attack-eps",
         "0.3",
         "--reattack-kind",

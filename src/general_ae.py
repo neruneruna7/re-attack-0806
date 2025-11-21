@@ -106,14 +106,6 @@ class Runner:
             elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
                 assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
                 foolbox_attack = foolbox.attacks.FGSM()
-        elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
-            assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            bounds = (0.0, 1.0)
-            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            foolbox_attack = foolbox.attacks.FGSM(random_start=False) # type: ignore[reportPrivateImportUsage]
 
         global_idx = 0
         for data, target in tqdm(self.test_loader, desc="Attacking"):
