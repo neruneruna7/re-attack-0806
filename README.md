@@ -1,6 +1,3 @@
-# Adversarial Attack and Re-attack Experimentation Framework
-
-このプロジェクトは、機械学習モデルに対する敵対的攻撃（Adversarial Attack）および、生成された敵対的サンプルに対する再攻撃（Re-attack）の実験を行うための，個人の研究リポジトリ．
 
 ## 1. 動作確認環境
 - Python 3.11 以上
