@@ -34,6 +34,7 @@ DEFAULT_MODEL_DIR = "./weight"
 DEFAULT_OUTPUT_DIR = "reattacked_data"
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_NUM_SAMPLES = -1
+DEFAULT_SHUFFLE_DATALOADER = False # 新しく追加
 
 
 @dataclass
@@ -52,6 +53,7 @@ class Config:
     output_dir: str
     num_samples: int
     save_images: bool
+    shuffle_dataloader: bool # 新しく追加
 
     # デバイスと正規化情報（内部で設定）
     device: torch.device
@@ -63,7 +65,7 @@ class Runner:
         self.cfg = cfg
         self.device = cfg.device
         self.model = ModelFactory.create(cfg.model, self.device)
-        self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
+        self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size, shuffle=cfg.shuffle_dataloader)
         self._load_weights_if_exists(cfg.model_dir)
         self.model.eval() # 評価モードに設定
 
@@ -73,7 +75,6 @@ class Runner:
         self.reattack_obj = None
 
         if cfg.attack_kind == AttackKind.FOOLBOX_BIM or cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
-            # バグ修正: .squeeze()を追加してテンソルを1Dに
             mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
             std_list = self.cfg.dataset_norm.std.squeeze().tolist()
             preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
@@ -227,6 +228,7 @@ def parse_args() -> Config:
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"Directory to save reattacked images (default: {DEFAULT_OUTPUT_DIR})")
     parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
     parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=True, help='Save attacked images (default). Use --no-save-images to disable.')
+    parser.add_argument("--shuffle-dataloader", action="store_true", default=DEFAULT_SHUFFLE_DATALOADER, help=f"Shuffle the dataloader (default: {DEFAULT_SHUFFLE_DATALOADER}).") # ここに追加
 
     # Attack Configs (必須パラメータはここでNoneとし、後に検証)
     parser.add_argument("--attack-eps", type=fraction_float, default=None, help="Epsilon for initial attack.")
@@ -277,6 +279,7 @@ def parse_args() -> Config:
         output_dir=args.output_dir,
         num_samples=args.num_samples,
         save_images=args.save_images,
+        shuffle_dataloader=args.shuffle_dataloader,
         device=device,
         dataset_norm=DatasetNorm(dataset, device),
         attack_kind=attack_kind,

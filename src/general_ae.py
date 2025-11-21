@@ -35,6 +35,8 @@ DEFAULT_MODEL_DIR = "./weight"
 DEFAULT_OUTPUT_DIR = "attacked_data"
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_NUM_SAMPLES = -1
+DEFAULT_SHUFFLE_DATALOADER = False # 新しく追加
+
 
 @dataclass
 class Config:
@@ -50,6 +52,7 @@ class Config:
     batch_size: int
     num_samples: int
     save_attacked_images: bool
+    shuffle_dataloader: bool # 新しく追加
 
     # デバイスと正規化情報（内部で設定）
     device: torch.device
@@ -60,7 +63,7 @@ class Runner:
         self.cfg = cfg
         self.device = cfg.device
         self.model = ModelFactory.create(cfg.model, self.device)
-        self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size)
+        self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size, shuffle=cfg.shuffle_dataloader)
         self._load_weights_if_exists(cfg.model_dir)
         self.model.eval()
 
@@ -186,6 +189,7 @@ def parse_args() -> Config:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
     parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
     parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=True, help='Save attacked images (default). Use --no-save-images to disable.')
+    parser.add_argument("--shuffle-dataloader", action="store_true", default=DEFAULT_SHUFFLE_DATALOADER, help=f"Shuffle the dataloader (default: {DEFAULT_SHUFFLE_DATALOADER}).")
 
     # 攻撃ごとの任意パラメータ
     parser.add_argument("--epsilon", type=fraction_float, default=None, help="Epsilon for attack.")
@@ -229,6 +233,7 @@ def parse_args() -> Config:
         batch_size=args.batch_size,
         num_samples=args.num_samples,
         save_attacked_images=args.save_images,
+        shuffle_dataloader=args.shuffle_dataloader,
         device=device,
         dataset_norm=DatasetNorm(dataset, device),
     )

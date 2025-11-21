@@ -210,7 +210,8 @@
         "--batch-size",
         "16",
         "--num-samples",
-        "1",
+        "1024",
+        "--shuffle-dataloader",
     ]
     # バッチサイズが64だとメモリ不足になる
 
@@ -236,6 +237,7 @@
         "--batch-size",
         "16",
         "--num-samples",
-        "1",
+        "1024",
+        "--shuffle-dataloader",
     ]
     # バッチサイズが64だとメモリ不足になる

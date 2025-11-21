@@ -137,7 +137,7 @@ class ModelFactory:
 
 class DataFactory:
     @staticmethod
-    def loader(kind: DatasetKind, batch_size: int, train: bool) -> torch.utils.data.DataLoader:
+    def loader(kind: DatasetKind, batch_size: int, train: bool, shuffle: bool) -> torch.utils.data.DataLoader:
         if kind == DatasetKind.MNIST:
             transform = transforms.Compose([
                 transforms.ToTensor(),
@@ -181,4 +181,4 @@ class DataFactory:
 
         else:
             raise ValueError(f"unsupported dataset kind: {kind}")
-        return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False)
+        return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=shuffle)
