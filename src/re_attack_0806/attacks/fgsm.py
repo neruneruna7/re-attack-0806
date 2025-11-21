@@ -8,35 +8,17 @@ from torch import Tensor
 from re_attack_0806.utils.normTensor import *
 
 
-def _default_mean_std(channels: int, device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor]:
-    """チャネル数に応じた既定の平均 / 標準偏差を返す（MNIST / CIFAR を想定）。
-    戻り値は (mean, std) で、形状は [1, C, 1, 1]。
-    """
-    if channels == 1:
-        mean = torch.tensor([0.1307], device=device, dtype=dtype).view(1, -1, 1, 1)
-        std = torch.tensor([0.3081], device=device, dtype=dtype).view(1, -1, 1, 1)
-    else:
-        # CIFAR 風の既定値
-        mean = torch.tensor([0.4914, 0.4822, 0.4465], device=device, dtype=dtype).view(1, -1, 1, 1)
-        std = torch.tensor([0.2470, 0.2435, 0.2616], device=device, dtype=dtype).view(1, -1, 1, 1)
-    return mean, std
-
-
-def _to_norm_eps(epsilon: float, std_t: Tensor) -> Tensor:
-    """ピクセル空間の epsilon を正規化空間のテンソルに変換する。
-
-    戻り値は `std_t` と同じ形 [1,C,1,1] のテンソル。
-    """
-    return torch.tensor(epsilon, device=std_t.device, dtype=std_t.dtype) / std_t
-
-
 def fgsm(input_norm: NormTensor,
-              eps_norm: float | Tensor,
-              target: Tensor,
-              eval_model: nn.Module,
-              device: torch.device,
-              *,
-              orig_norm: Optional[NormTensor] = None) -> NormTensor:
+        target: Tensor,
+        eval_model: nn.Module,
+        device: torch.device,
+        eps: float,
+        mean_t: Tensor,
+        std_t: Tensor,
+        *,
+        min_val: float = 0.0, 
+        max_val: float = 1.0, 
+        orig_norm: Optional[NormTensor] = None) -> NormTensor:
     """FGSM のコア（正規化空間での実装）。
 
     - `input_norm`: 正規化済みテンソルを持つ `NormTensor`。
@@ -49,15 +31,19 @@ def fgsm(input_norm: NormTensor,
     else:
         orig_norm_inner = orig_norm.tensor.clone().detach().to(device)
 
+    # もっともfoolbox実装に近づけるため，min/max_valも正規化する 
+    # 正規化しないと，出力される画像が異様になる
+    # 正規化するのが正解と思われる
+    min_val_norm = (min_val - mean_t) / std_t
+    max_val_norm = (max_val - mean_t) / std_t
+
+
     if target is not None:
         target = target.to(device)
         if target.dim() == 0:
             target = target.unsqueeze(0)
         target = target.long()
 
-    # eps_norm をテンソル化
-    if not isinstance(eps_norm, Tensor):
-        eps_norm = torch.tensor(eps_norm, device=input_norm_inner.device, dtype=input_norm_inner.dtype)
 
     req = input_norm_inner.clone().detach().requires_grad_(True)
     outputs = eval_model(req)
@@ -67,11 +53,12 @@ def fgsm(input_norm: NormTensor,
     if grad_norm is None:
         raise RuntimeError("fgsm_norm: gradient is None")
 
-    perturbed_norm = (input_norm_inner + eps_norm * grad_norm.sign()).detach()
+    perturbed_norm = (input_norm_inner + eps * grad_norm.sign()).detach()
 
     # delta を clamp（orig を基準）
     delta = perturbed_norm - orig_norm_inner
-    delta = torch.max(torch.min(delta, eps_norm), -eps_norm)
+    delta = torch.clamp(delta, min=-eps, max=eps)
     perturbed_norm = (orig_norm_inner + delta).detach()
+    perturbed_norm = torch.clamp(perturbed_norm, min=min_val_norm, max=max_val_norm)
 
     return NormTensor(perturbed_norm, input_norm.state)

@@ -1,5 +1,5 @@
 # 再攻撃を実行し、その結果を評価・保存する汎用コード
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from torch.types import Number
 from typing import Any, Iterator, Optional, Tuple
 import torch
@@ -120,9 +120,7 @@ class Runner:
         
         elif kind == AttackKind.FGSM:
             assert isinstance(params, FGSMAttackParam), "Invalid params for FGSM"
-            eps_norm = params.epsilon / self.cfg.dataset_norm.std.mean() # stdが複数の値を持つ場合を考慮
-            return fgsm.fgsm(data_norm, eps_norm, target, self.model, self.device)
-            
+            return fgsm.fgsm(data_norm, target, self.model, self.device, params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)            
         elif kind == AttackKind.FOOLBOX_BIM:
             assert isinstance(params, BIMAttackParam), "Invalid params for FoolboxBIM"
             
@@ -364,15 +362,32 @@ def main():
     total, clean_correct, attack_successful, reattack_successful, reattack_to_clean, reattack_correct_to_original = \
         stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful'], stats['reattack_successful_to_clean'], stats['reattack_correct_to_original']
     
+    def format_params(params: AttackParams) -> str:
+        # dataclassを辞書に変換し、'batch_size'を除外
+        params_dict = asdict(params)
+        params_dict.pop('batch_size', None)
+        # 値を整形して、見やすい文字列を生成
+        return ", ".join([f"{k}: {v:.4g}" if isinstance(v, float) else f"{k}: {v}" for k, v in params_dict.items()])
+
+    attack_params_formatted = format_params(cfg.attack_params)
+    reattack_params_formatted = format_params(cfg.reattack_params)
+
     print("\n=== 再攻撃概要 ===")
-    print(f"処理サンプル総数: {total}")
-    print(f"クリーン精度: {clean_correct / total:.4f} ({clean_correct}/{total})")
+    print("[実験設定]")
+    print(f"  データセット: {cfg.dataset.value}")
+    print(f"  モデル: {cfg.model.value}")
+    print(f"  初回攻撃: {cfg.attack_kind.value} ({attack_params_formatted})")
+    print(f"  再攻撃: {cfg.reattack_kind.value} ({reattack_params_formatted})")
+    
+    print("\n[結果]")
+    print(f"  処理サンプル総数: {total}")
+    print(f"  クリーン精度: {clean_correct / total:.4f} ({clean_correct}/{total})")
     if clean_correct > 0:
-        print(f"初回攻撃成功率: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
+        print(f"  初回攻撃成功率: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
         if attack_successful > 0:
-            print(f"再攻撃成功率 (攻撃後から変化): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
-            print(f"再攻撃成功率 (クリーンに戻ったもの): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
-    print(f"再攻撃後正解率(クリーン識別成功，攻撃成功を考慮しない): {reattack_correct_to_original / total:.4f} ({reattack_correct_to_original}/{total})")
+            print(f"  再攻撃成功率 (攻撃後から変化): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
+            print(f"  再攻撃成功率 (クリーンに戻ったもの): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
+    print(f"  再攻撃後正解率(クリーン識別成功，攻撃成功を考慮しない): {reattack_correct_to_original / total:.4f} ({reattack_correct_to_original}/{total})")
     print(f"結果は {csv_filename} に保存されました。")
     print("=========================")
 

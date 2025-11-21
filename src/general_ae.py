@@ -137,8 +137,7 @@ class Runner:
                     continue
             elif self.cfg.attack == AttackKind.FGSM:
                 assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
-                eps_norm = self.cfg.attack_params.epsilon / self.cfg.dataset_norm.std.mean()
-                perturbed = fgsm.fgsm(data_ts_norm, eps_norm, target_ts, self.model, self.device)
+                perturbed = fgsm.fgsm(data_ts_norm, target_ts, self.model, self.device, self.cfg.attack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
             else:
                 raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
 

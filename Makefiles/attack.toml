@@ -22,6 +22,25 @@
         "128",
     ]
 
+[tasks.attack-morimoto-cifar10-fgsm]
+    description="Attack Morimoto CIFAR-10 model with FGSM"
+    category="Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--attack",
+        "fgsm",
+        "--epsilon",
+        "0.3",
+        "--batch-size",
+        "128",
+    ]
+
 
 [tasks.attack-morimoto-cifar10-bim]
     description="Attack Morimoto CIFAR-10 model with BIM"
