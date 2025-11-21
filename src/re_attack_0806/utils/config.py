@@ -80,6 +80,56 @@ ATTACK_KIND_TO_PARAM: dict[AttackKind, AttackParamKind] = {
     AttackKind.LINF_BIM: AttackParamKind.BIM,
 }
 
+
+class AttackParamsFactory:
+    """攻撃パラメータを生成するファクトリークラス
+    
+    攻撃種別と引数から適切な攻撃パラメータオブジェクトを生成します。
+    DRY原則に従い、パラメータ生成ロジックを一元化しています。
+    """
+    
+    @staticmethod
+    def create_from_args(
+        attack_kind: AttackKind,
+        epsilon: float,
+        batch_size: int,
+        alpha: Optional[float] = None,
+        iters: Optional[int] = None
+    ) -> AttackParams:
+        """コマンドライン引数から攻撃パラメータを生成
+        
+        Args:
+            attack_kind: 攻撃の種類
+            epsilon: 摂動の大きさ
+            batch_size: バッチサイズ
+            alpha: ステップサイズ（反復攻撃の場合のみ）
+            iters: 反復回数（反復攻撃の場合のみ）
+            
+        Returns:
+            攻撃パラメータオブジェクト
+            
+        Raises:
+            ValueError: 必要なパラメータが不足している場合
+            NotImplementedError: サポートされていない攻撃種別の場合
+        """
+        if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM, AttackKind.LINF_BIM]:
+            if alpha is None or iters is None:
+                raise ValueError(f"{attack_kind.value} 攻撃には --alpha と --n が必要です。")
+            return BIMAttackParam(
+                epsilon=epsilon,
+                alpha=alpha,
+                iters=iters,
+                batch_size=batch_size
+            )
+        elif attack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
+            return FGSMAttackParam(
+                epsilon=epsilon,
+                batch_size=batch_size
+            )
+        else:
+            raise NotImplementedError(f"攻撃手法 {attack_kind.value} のパラメータ生成が実装されていません。")
+
+
 class DatasetNorm:
     """データセット種別に基づく正規化/非正規化を行うユーティリティクラス。
 

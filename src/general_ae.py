@@ -10,7 +10,7 @@ import argparse
 from torch import Tensor
 
 from re_attack_0806 import utils
-from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm, AttackParams, FGSMAttackParam, BIMAttackParam
+from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm, AttackParams, FGSMAttackParam, BIMAttackParam, AttackParamsFactory
 from re_attack_0806.utils.normTensor import *
 from re_attack_0806.strategies.factory import AttackStrategyFactory
 from re_attack_0806.result_processor import ResultProcessor, AttackResult
@@ -376,24 +376,15 @@ def parse_args() -> Config:
     
     args = parser.parse_args()
 
-    # 攻撃種別に基づいてAttackParamsを生成
+    # 攻撃種別に基づいてAttackParamsを生成（ファクトリーを使用）
     attack_kind = AttackKind(args.attack)
-    attack_params: AttackParams
-
-    if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM, AttackKind.LINF_BIM]:
-        attack_params = BIMAttackParam(
-            epsilon=args.epsilon,
-            alpha=args.alpha,
-            iters=args.n,
-            batch_size=args.batch_size
-        )
-    elif attack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
-        attack_params = FGSMAttackParam(
-            epsilon=args.epsilon,
-            batch_size=args.batch_size
-        )
-    else:
-        raise NotImplementedError(f"攻撃手法 {attack_kind.value} のパラメータ検証が実装されていません。")
+    attack_params = AttackParamsFactory.create_from_args(
+        attack_kind=attack_kind,
+        epsilon=args.epsilon,
+        batch_size=args.batch_size,
+        alpha=getattr(args, 'alpha', None),
+        iters=getattr(args, 'n', None)
+    )
 
     dataset = DatasetKind(args.dataset)
     device = utils.get_device()
