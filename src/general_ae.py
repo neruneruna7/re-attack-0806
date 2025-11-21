@@ -104,7 +104,7 @@ class Runner:
             foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
 
         global_idx = 0
-        for i, (data, target) in tqdm(enumerate(self.test_loader), desc="Attacking"):
+        for data, target in tqdm(self.test_loader, desc="Attacking"):
             if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                 break
             
