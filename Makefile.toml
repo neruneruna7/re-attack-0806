@@ -2,240 +2,240 @@
     skip_core_tasks=true
 
 [tasks.train-morimoto-cifar10]
-    args=[
-        "--batch-size",
-        "--dataset",
-        "--epochs",
-        "--lr",
-        "--model",
-        "128",
-        "1e-2",
-        "99",
-        "cifar10",
-        "morimoto-cifar10",
-        "run",
-        "src/general_train.py",
-    ]
+    description="Train Morimoto model on CIFAR-10"
     category="Training"
     command="uv"
-    description="Train Morimoto model on CIFAR-10"
+    args=[
+        "run",
+        "src/general_train.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--epochs",
+        "99",
+        "--batch-size",
+        "128",
+        "--lr",
+        "1e-2",
+    ]
 
 [tasks.train-morimoto-mnist]
-    args=[
-        "--batch-size",
-        "--dataset",
-        "--epochs",
-        "--lr",
-        "--model",
-        "128",
-        "1e-4",
-        "99",
-        "mnist",
-        "morimoto-mnist",
-        "run",
-        "src/general_train.py",
-    ]
+    description="Train Morimoto model on MNIST"
     category="Training"
     command="uv"
-    description="Train Morimoto model on MNIST"
+    args=[
+        "run",
+        "src/general_train.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--epochs",
+        "99",
+        "--batch-size",
+        "128",
+        "--lr",
+        "1e-4",
+    ]
 
 [tasks.attack-morimoto-mnist-bim]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "0.05",
-        "0.3",
-        "1",
-        "10",
-        "bim",
-        "mnist",
-        "morimoto-mnist",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Morimoto MNIST model with BIM"
     category="Attacks"
     command="uv"
-    description="Attack Morimoto MNIST model with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack",
+        "bim",
+        "--epsilon",
+        "0.3",
+        "--alpha",
+        "0.05",
+        "--n",
+        "10",
+        "--batch-size",
+        "1",
+    ]
 
 [tasks.attack-morimoto-cifar10-bim]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "0.05",
-        "0.3",
-        "10",
-        "64",
-        "bim",
-        "cifar10",
-        "morimoto-cifar10",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Morimoto CIFAR-10 model with BIM"
     category="Attacks"
     command="uv"
-    description="Attack Morimoto CIFAR-10 model with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--attack",
+        "bim",
+        "--epsilon",
+        "0.3",
+        "--alpha",
+        "0.05",
+        "--n",
+        "10",
+        "--batch-size",
+        "64",
+    ]
 
 [tasks.attack-morimoto-cifar10-foolbox-bim]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "0.05",
-        "0.3",
-        "10",
-        "64",
-        "cifar10",
-        "foolbox-bim",
-        "morimoto-cifar10",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Morimoto CIFAR-10 model with BIM"
     category="Attacks"
     command="uv"
-    description="Attack Morimoto CIFAR-10 model with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--attack",
+        "foolbox-bim",
+        "--epsilon",
+        "0.3",
+        "--alpha",
+        "0.05",
+        "--n",
+        "10",
+        "--batch-size",
+        "64",
+    ]
 
 [tasks.attack-morimoto-cifar10-linf-bim]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "0.05",
-        "0.3",
-        "10",
-        "64",
-        "cifar10",
-        "linf-bim",
-        "morimoto-cifar10",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Morimoto CIFAR-10 model with BIM"
     category="Attacks"
     command="uv"
-    description="Attack Morimoto CIFAR-10 model with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--attack",
+        "linf-bim",
+        "--epsilon",
+        "0.3",
+        "--alpha",
+        "0.05",
+        "--n",
+        "10",
+        "--batch-size",
+        "64",
+    ]
 
 [tasks.attack-morimoto-mnist-foolbox-bim]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "0.05",
-        "0.3",
-        "10",
-        "64",
-        "foolbox-bim",
-        "mnist",
-        "morimoto-mnist",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Morimoto MNIST model with BIM"
     category="Attacks"
     command="uv"
-    description="Attack Morimoto MNIST model with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack",
+        "foolbox-bim",
+        "--epsilon",
+        "0.3",
+        "--alpha",
+        "0.05",
+        "--n",
+        "10",
+        "--batch-size",
+        "64",
+    ]
 
 [tasks.attack-morimoto-mnist-fgsm]
-    args=[
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "0.3",
-        "1",
-        "fgsm",
-        "mnist",
-        "morimoto-mnist",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Morimoto MNIST model with FGSM"
     category="Attacks"
     command="uv"
-    description="Attack Morimoto MNIST model with FGSM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack",
+        "fgsm",
+        "--epsilon",
+        "0.3",
+        "--batch-size",
+        "1",
+    ]
 
 [tasks.attack-sample-ploof]
-    args=[
-        "--attack",
-        "--dataset",
-        "--model",
-        "fgsm",
-        "mnist",
-        "ploof",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack Ploof model on MNIST with FGSM"
     category="Attacks"
     command="uv"
-    description="Attack Ploof model on MNIST with FGSM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "ploof",
+        "--attack",
+        "fgsm",
+    ]
 
 [tasks.attack-bim-advo]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "--num-samples",
-        "1",
-        "1/255",
-        "10",
-        "16",
-        "8/255",
-        "bim",
-        "imagenet",
-        "inception-v3",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack InceptionV3 model on ImageNet with BIM"
     category="Attacks"
     command="uv"
-    description="Attack InceptionV3 model on ImageNet with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "imagenet",
+        "--model",
+        "inception-v3",
+        "--attack",
+        "bim",
+        "--epsilon",
+        "8/255",
+        "--alpha",
+        "1/255",
+        "--n",
+        "10",
+        "--batch-size",
+        "16",
+        "--num-samples",
+        "1",
+    ]
     # バッチサイズが64だとメモリ不足になる
 
 [tasks.attack-foolbox-bim-advo]
-    args=[
-        "--alpha",
-        "--attack",
-        "--batch-size",
-        "--dataset",
-        "--epsilon",
-        "--model",
-        "--n",
-        "--num-samples",
-        "1",
-        "1/255",
-        "10",
-        "16",
-        "8/255",
-        "foolbox-bim",
-        "imagenet",
-        "inception-v3",
-        "run",
-        "src/general_ae.py",
-    ]
+    description="Attack InceptionV3 model on ImageNet with BIM"
     category="Attacks"
     command="uv"
-    description="Attack InceptionV3 model on ImageNet with BIM"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "imagenet",
+        "--model",
+        "inception-v3",
+        "--attack",
+        "foolbox-bim",
+        "--epsilon",
+        "8/255",
+        "--alpha",
+        "1/255",
+        "--n",
+        "10",
+        "--batch-size",
+        "16",
+        "--num-samples",
+        "1",
+    ]
     # バッチサイズが64だとメモリ不足になる
