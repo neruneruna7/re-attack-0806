@@ -34,6 +34,8 @@ def fgsm(input_norm: NormTensor,
     # もっともfoolbox実装に近づけるため，min/max_valも正規化する 
     # 正規化しないと，出力される画像が異様になる
     # 正規化するのが正解と思われる
+
+    eps_norm = eps / std_t
     min_val_norm = (min_val - mean_t) / std_t
     max_val_norm = (max_val - mean_t) / std_t
 
@@ -53,12 +55,8 @@ def fgsm(input_norm: NormTensor,
     if grad_norm is None:
         raise RuntimeError("fgsm_norm: gradient is None")
 
-    perturbed_norm = (input_norm_inner + eps * grad_norm.sign()).detach()
+    perturbed_norm = (input_norm_inner + eps_norm * grad_norm.sign()).detach()
 
-    # delta を clamp（orig を基準）
-    delta = perturbed_norm - orig_norm_inner
-    delta = torch.clamp(delta, min=-eps, max=eps)
-    perturbed_norm = (orig_norm_inner + delta).detach()
     perturbed_norm = torch.clamp(perturbed_norm, min=min_val_norm, max=max_val_norm)
 
     return NormTensor(perturbed_norm, input_norm.state)
