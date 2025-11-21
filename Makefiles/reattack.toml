@@ -1,0 +1,109 @@
+[tasks.reattack-morimoto-mnist-bim-fgsm]
+    description="Re-attack Morimoto MNIST model with BIM -> FGSM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack-kind",
+        "bim",
+        "--attack-eps",
+        "0.3",
+        "--attack-alpha",
+        "0.05",
+        "--attack-n",
+        "10",
+        "--reattack-kind",
+        "fgsm",
+        "--reattack-eps",
+        "0.3",
+        "--batch-size",
+        "128",
+    ]
+
+
+[tasks.reattack-morimoto-mnist-bim-bim]
+    description="Re-attack Morimoto MNIST model with BIM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack-kind",
+        "bim",
+        "--attack-eps",
+        "0.3",
+        "--attack-alpha",
+        "0.05",
+        "--attack-n",
+        "10",
+        "--reattack-kind",
+        "bim",
+        "--reattack-eps",
+        "0.3",
+        "--reattack-alpha",
+        "0.05",
+        "--reattack-n",
+        "10",
+        "--batch-size",
+        "128",
+    ]
+
+[tasks.reattack-morimoto-mnist-fgsm-fgsm]
+    description="Re-attack Morimoto MNIST model with FGSM -> FGSM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack-kind",
+        "fgsm",
+        "--attack-eps",
+        "0.3",
+        "--reattack-kind",
+        "fgsm",
+        "--reattack-eps",
+        "0.3",
+        "--batch-size",
+        "128",
+    ]
+
+[tasks.reattack-morimoto-mnist-fgsm-bim]
+    description="Re-attack Morimoto MNIST model with FGSM -> BIM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack-kind",
+        "fgsm",
+        "--attack-eps",
+        "0.3",
+        "--reattack-kind",
+        "bim",
+        "--reattack-eps",
+        "0.3",
+        "--reattack-alpha",
+        "0.05",
+        "--reattack-n",
+        "10",
+        "--batch-size",
+        "128",
+    ]
+
