@@ -59,7 +59,7 @@
         "--n",
         "10",
         "--batch-size",
-        "1",
+        "128",
     ]
 
 [tasks.attack-morimoto-cifar10-bim]
@@ -82,7 +82,7 @@
         "--n",
         "10",
         "--batch-size",
-        "64",
+        "128",
     ]
 
 [tasks.attack-morimoto-cifar10-foolbox-bim]
@@ -105,7 +105,7 @@
         "--n",
         "10",
         "--batch-size",
-        "64",
+        "128",
     ]
 
 [tasks.attack-morimoto-cifar10-linf-bim]
@@ -128,7 +128,7 @@
         "--n",
         "10",
         "--batch-size",
-        "64",
+        "128",
     ]
 
 [tasks.attack-morimoto-mnist-foolbox-bim]
@@ -151,7 +151,7 @@
         "--n",
         "10",
         "--batch-size",
-        "64",
+        "128",
     ]
 
 [tasks.attack-morimoto-mnist-fgsm]
@@ -170,7 +170,7 @@
         "--epsilon",
         "0.3",
         "--batch-size",
-        "1",
+        "128",
     ]
 
 [tasks.attack-sample-ploof]
