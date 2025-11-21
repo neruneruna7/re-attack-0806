@@ -58,6 +58,17 @@ class Config:
     device: torch.device
     dataset_norm: DatasetNorm
 
+@dataclass
+class AttackResult:
+    """1サンプルに対する攻撃・前処理・再攻撃の結果を格納するデータクラス。"""
+    index: int
+    target_label: int
+    pred_clean: int
+    pred_attacked: int
+    pred_preprocessed: int
+    pred_reattacked: int
+    final_image: TensorWithState
+
 class Runner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -172,7 +183,7 @@ class Runner:
         else:
             raise ValueError(f"Unsupported attack kind: {kind}")
 
-    def run(self) -> Iterator[Tuple]:
+    def run(self) -> Iterator[AttackResult]:
         print(f"Running Preprocess & Re-Attack with config: {self.cfg}")
 
         global_idx = 0
@@ -206,10 +217,15 @@ class Runner:
                 if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                     return
 
-                yield (
-                    global_idx, target_ts[j].item(), pred_clean.view(-1)[j].item(), 
-                    pred_attacked.view(-1)[j].item(), pred_preprocessed.view(-1)[j].item(), pred_reattacked.view(-1)[j].item(),
-                    TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
+                yield AttackResult(
+                    index=global_idx,
+                    # そもそも整数型になることはわかりきっているので，.as_integer_ratio()[0]でfloatをintに変換する方法を使う
+                    target_label=target_ts[j].item().as_integer_ratio()[0],
+                    pred_clean=pred_clean.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_attacked=pred_attacked.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_preprocessed=pred_preprocessed.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_reattacked=pred_reattacked.view(-1)[j].item().as_integer_ratio()[0],
+                    final_image=TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
                 )
                 global_idx += 1
 
@@ -301,18 +317,21 @@ def main():
 
     stats = {
         'total': 0, 'clean_correct': 0, 'attack_successful': 0, 
-        'preprocessed_correct': 0, 'defense_successful': 0,
-        'reattack_successful_from_preprocessed': 0, 'reattack_correct_to_original': 0
+        'defense_successful_by_preprocess': 0,
+        'defense_successful_after_reattack': 0, # 新しい指標
+        'reattack_successful_from_preprocessed': 0, 
+        'reattack_correct_to_original': 0
     }
     
     def format_params_str(params) -> str:
         if params is None: return "None"
-        params_dict = asdict(params)
-        return ",  ".join([f"{k}: {v}" for k, v in params_dict.items()])
+        # asdictがNoneを返すことがあるため、Noneの場合は空の辞書を返す
+        params_dict = asdict(params) if params is not None else {}
+        return ", ".join([f"{k}: {v}" for k, v in params_dict.items() if k != 'batch_size'])
 
-    attack_params_str = f"{cfg.attack_kind.value}_{format_params_str(cfg.attack_params)}".replace('-','.')
-    preprocess_params_str = f"{cfg.preprocessing_kind.value}_{format_params_str(cfg.preprocessing_params)}"
-    reattack_params_str = f"{cfg.reattack_kind.value}_{format_params_str(cfg.reattack_params)}".replace('-','.')
+    attack_params_str = f"{cfg.attack_kind.value}, {format_params_str(cfg.attack_params)}"
+    preprocess_params_str = f"{cfg.preprocessing_kind.value}, {format_params_str(cfg.preprocessing_params)}"
+    reattack_params_str = f"{cfg.reattack_kind.value}, {format_params_str(cfg.reattack_params)}"
 
     output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_params_str, preprocess_params_str, reattack_params_str)
     os.makedirs(output_folder, exist_ok=True)
@@ -325,23 +344,35 @@ def main():
         writer.writerow(csv_header)
         
         for result_tuple in result_generator:
-            (idx, target, pred_c, pred_a, pred_p, pred_r, image_ts) = result_tuple
+            idx = result_tuple.index
+            target = result_tuple.target_label
+            pred_c = result_tuple.pred_clean
+            pred_a = result_tuple.pred_attacked
+            pred_p = result_tuple.pred_preprocessed
+            pred_r = result_tuple.pred_reattacked
+            image_ts = result_tuple.final_image
+
             
             stats['total'] += 1
-            if pred_c == target:
-                stats['clean_correct'] += 1
-                if pred_a != target:
-                    stats['attack_successful'] += 1
-                    if pred_p == target:
-                        stats['defense_successful'] += 1
-
-            if pred_p == target:
-                stats['preprocessed_correct'] += 1
-                if pred_r != target:
-                    stats['reattack_successful_from_preprocessed'] += 1
-            
             if pred_r == target:
                 stats['reattack_correct_to_original'] += 1
+
+            if pred_c == target:
+                stats['clean_correct'] += 1
+                # 初回攻撃で誤分類されたサンプルを対象
+                if pred_a != target:
+                    stats['attack_successful'] += 1
+                    # 前処理"のみ"で正解に戻った場合
+                    if pred_p == target:
+                        stats['defense_successful_by_preprocess'] += 1
+                    # 前処理と再攻撃を経て"最終的に"正解に戻った場合
+                    if pred_r == target:
+                        stats['defense_successful_after_reattack'] += 1
+
+            if pred_p == target:
+                # 前処理後に正解だったものが再攻撃で誤分類された場合
+                if pred_r != target:
+                    stats['reattack_successful_from_preprocessed'] += 1
 
             image_path = ""
             if cfg.save_images:
@@ -362,27 +393,26 @@ def main():
     total = stats['total']
     clean_correct = stats['clean_correct']
     attack_successful = stats['attack_successful']
-    defense_successful = stats['defense_successful']
+    defense_by_preprocess = stats['defense_successful_by_preprocess']
+    defense_after_reattack = stats['defense_successful_after_reattack']
+
     print(f"  処理サンプル総数: {total}")
     print(f"  クリーン精度: {clean_correct / total:.4f} ({clean_correct}/{total})")
+    
     if clean_correct > 0:
         print(f"  初回攻撃成功率 (クリーン -> 誤分類): {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
-    if attack_successful > 0:
-        print(f"  防御成功率 (誤分類 -> クリーン): {defense_successful / attack_successful:.4f} ({defense_successful}/{attack_successful})")
     
-    preprocessed_correct = stats['preprocessed_correct']
-    reattack_successful_from_preprocessed = stats['reattack_successful_from_preprocessed']
-    if total > 0:
-        print(f"  前処理後精度: {preprocessed_correct / total:.4f} ({preprocessed_correct}/{total})")
-    if preprocessed_correct > 0:
-         print(f"  再攻撃成功率 (前処理後正解 -> 誤分類): {reattack_successful_from_preprocessed / preprocessed_correct:.4f} ({reattack_successful_from_preprocessed}/{preprocessed_correct})")
+    if attack_successful > 0:
+        print(f"  防御成功率 (前処理のみ): {defense_by_preprocess / attack_successful:.4f} ({defense_by_preprocess}/{attack_successful})")
+        print(f"  前処理+再攻撃による防御成功率: {defense_after_reattack / attack_successful:.4f} ({defense_after_reattack}/{attack_successful})")
     
     reattack_correct_to_original = stats['reattack_correct_to_original']
     if total > 0:
-        print(f"  最終的な正解率: {reattack_correct_to_original / total:.4f} ({reattack_correct_to_original}/{total})")
+        print(f"  最終的な正解率 (全サンプル中): {reattack_correct_to_original / total:.4f} ({reattack_correct_to_original}/{total})")
 
     print(f"\n結果は {csv_filename} に保存されました。")
     print("========================================")
+
 
 if __name__ == "__main__":
     # PIL.ImageFilter をインポート (MedianBlurで使用)
