@@ -1,0 +1,85 @@
+# prepross_reattack.toml
+
+[tasks.prepross-mnist-fgsm-gauss-fgsm]
+description = "MNIST: FGSM attack -> Gaussian Blur -> FGSM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "mnist",
+    "--model", "morimoto-mnist",
+    "--attack-kind", "fgsm",
+    "--attack-eps", "0.25",
+    "--preprocess-kind", "gaussian_blur",
+    "--preprocess-kernel-size", "3",
+    "--preprocess-sigma", "1.0",
+    "--reattack-kind", "fgsm",
+    "--reattack-eps", "0.25",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]
+
+[tasks.prepross-mnist-bim-gauss-bim]
+description = "MNIST: BIM attack -> Gaussian Blur -> BIM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "mnist",
+    "--model", "morimoto-mnist",
+    "--attack-kind", "bim",
+    "--attack-eps", "0.15",
+    "--attack-alpha", "0.05",
+    "--attack-n", "10",
+    "--preprocess-kind", "gaussian_blur",
+    "--preprocess-kernel-size", "3",
+    "--preprocess-sigma", "1.0",
+    "--reattack-kind", "bim",
+    "--reattack-eps", "0.15",
+    "--reattack-alpha", "0.05",
+    "--reattack-n", "10",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]
+
+[tasks.prepross-cifar10-fgsm-gauss-fgsm]
+description = "CIFAR-10: FGSM attack -> Gaussian Blur -> FGSM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "cifar10",
+    "--model", "morimoto-cifar10",
+    "--attack-kind", "fgsm",
+    "--attack-eps", "8/255",
+    "--preprocess-kind", "gaussian_blur",
+    "--preprocess-kernel-size", "3",
+    "--preprocess-sigma", "0.5",
+    "--reattack-kind", "fgsm",
+    "--reattack-eps", "8/255",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]
+
+[tasks.prepross-cifar10-bim-gauss-bim]
+description = "CIFAR-10: BIM attack -> Gaussian Blur -> BIM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "cifar10",
+    "--model", "morimoto-cifar10",
+    "--attack-kind", "bim",
+    "--attack-eps", "8/255",
+    "--attack-alpha", "2/255",
+    "--attack-n", "10",
+    "--preprocess-kind", "gaussian_blur",
+    "--preprocess-kernel-size", "3",
+    "--preprocess-sigma", "0.5",
+    "--reattack-kind", "bim",
+    "--reattack-eps", "8/255",
+    "--reattack-alpha", "2/255",
+    "--reattack-n", "10",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]

@@ -12,5 +12,6 @@ wheels/
 /data
 /attacked_data
 /reattacked_data
+/preprocessed_reattacked_data
 
 /.serena

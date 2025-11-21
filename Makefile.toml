@@ -2,6 +2,7 @@ extend = [
     { path = "./Makefiles/train.toml"},
     { path = "./Makefiles/attack.toml"},
     { path = "./Makefiles/reattack.toml"},
+    { path = "./Makefiles/prepross_reattack.toml" }
 ]
 
 [config]

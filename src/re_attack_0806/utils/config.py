@@ -184,3 +184,27 @@ class DataFactory:
         else:
             raise ValueError(f"unsupported dataset kind: {kind}")
         return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=shuffle)
+
+# --- Preprocessing ---
+
+class PreprocessingKind(str, Enum):
+    """実行する前処理の種類。"""
+    NONE = "none"
+    GAUSSIAN_BLUR = "gaussian_blur"
+    MEDIAN_BLUR = "median_blur"
+    # 今後、JPEG圧縮などを追加可能
+    # JPEG_COMPRESSION = "jpeg_compression"
+
+@dataclass
+class GaussianBlurParams:
+    """ガウシアンブラーのパラメータ。"""
+    kernel_size: int
+    sigma: float
+
+@dataclass
+class MedianBlurParams:
+    """メディアンブラーのパラメータ。"""
+    kernel_size: int
+
+# 前処理パラメータの Union 型
+PreprocessingParams = Union[GaussianBlurParams, MedianBlurParams, None]
