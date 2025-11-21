@@ -296,7 +296,7 @@ def main():
     result_generator = runner.run()
 
     # ----- 統計情報の初期化とパス生成 -----
-    stats = {'total': 0, 'clean_correct': 0, 'attack_successful': 0, 'reattack_successful': 0, 'reattack_successful_to_clean': 0}
+    stats = {'total': 0, 'clean_correct': 0, 'attack_successful': 0, 'reattack_successful': 0, 'reattack_successful_to_clean': 0, 'reattack_correct_to_original': 0}
     
     # epsilonをattack_paramsから取得
     attack_eps_str = f"{cfg.attack_params.epsilon:.3f}"
@@ -325,6 +325,12 @@ def main():
             (idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_ts) = result_tuple
             
             stats['total'] += 1
+
+            # 新しい指標: 再攻撃後に元の正解ラベルに一致したか
+            if pred_r == target:
+                stats['reattack_correct_to_original'] += 1
+
+            # 既存の指標
             if pred_c == target:
                 stats['clean_correct'] += 1
                 if pred_a != pred_c:
@@ -355,8 +361,8 @@ def main():
                 print(f"Image saving for index {idx} generated an exception: {exc}")
 
 
-    total, clean_correct, attack_successful, reattack_successful, reattack_to_clean = \
-        stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful'], stats['reattack_successful_to_clean']
+    total, clean_correct, attack_successful, reattack_successful, reattack_to_clean, reattack_correct_to_original = \
+        stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful'], stats['reattack_successful_to_clean'], stats['reattack_correct_to_original']
     
     print("\n=== 再攻撃概要 ===")
     print(f"処理サンプル総数: {total}")
@@ -366,6 +372,7 @@ def main():
         if attack_successful > 0:
             print(f"再攻撃成功率 (攻撃後から変化): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
             print(f"再攻撃成功率 (クリーンに戻ったもの): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
+    print(f"再攻撃後正解率(クリーン識別成功，攻撃成功を考慮しない): {reattack_correct_to_original / total:.4f} ({reattack_correct_to_original}/{total})")
     print(f"結果は {csv_filename} に保存されました。")
     print("=========================")
 
