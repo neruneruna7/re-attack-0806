@@ -15,14 +15,24 @@ def get_device() -> torch.device:
     print("5. 実行デバイスを自動判別します...")
     accelerator = torch.device("cpu")
     # TPUランタイムが有効かチェック
-    tpu_addr = os.environ.get('COLAB_TPU_ADDR')
-    print(f"TPU Address: {tpu_addr}")
-    if 'COLAB_TPU_ADDR' in os.environ:
-        # TPUが利用可能
+    """
+    環境に応じてTPU, GPU, CPUの中から最適なデバイスを自動選択して返す。
+    torch_xlaがインストールされており、利用可能な場合はTPUを優先する。
+    """
+    # 1. まずTPU (XLA) のインポートとデバイス取得を試みる
+    try:
         import torch_xla.core.xla_model as xm
+        # インポートに成功したら、TPUデバイスを取得して返す
         accelerator = xm.xla_device()
-        print("ハードウェアアクセラレータ: TPU を使用します。")
-    elif torch.cuda.is_available():
+        print(f"Process on TPU: {accelerator}")
+        return accelerator
+    except ImportError:
+        # torch_xlaがインストールされていない場合は無視して次へ進む
+        pass
+    except RuntimeError:
+        # インストールされているがTPUに接続できない場合などの対策
+        pass
+    if torch.cuda.is_available():
         # GPU (CUDA) が利用可能
         accelerator = torch.device("cuda")
         print("ハードウェアアクセラレータ: GPU (CUDA) を使用します。")
