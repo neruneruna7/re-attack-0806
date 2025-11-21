@@ -1,5 +1,5 @@
 # モデルをトレーニングする汎用コード
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from torch.types import Number
 from typing import Any, Iterator, Optional, Tuple
 import torch
@@ -276,12 +276,27 @@ def main():
     attack_acc = (fail / clean_acc_total) if clean_acc_total > 0 else 0.0
     mean_perturb = (mean_mean_perturb / clean_acc_total) if clean_acc_total > 0 else 0.0
 
+    def format_params(params: AttackParams) -> str:
+        # dataclassを辞書に変換し、'batch_size'を除外
+        params_dict = asdict(params)
+        params_dict.pop('batch_size', None)
+        # 値を整形して、見やすい文字列を生成
+        return ", ".join([f"{k}: {v:.4g}" if isinstance(v, float) else f"{k}: {v}" for k, v in params_dict.items()])
+
+    attack_params_formatted = format_params(cfg.attack_params)
+
     print("\n=== Attack Summary ===")
-    print(f"Epsilon: {eps_str}\t攻撃成功率= {attack_acc:.4f} = {fail} / {clean_acc_total}")
-    print("攻撃成功率には，元の画像を正しく分類したサンプルのみを考慮している．")
-    print(f"平均摂動量(L2ノルム) = {mean_perturb:.4f}")
-    print(f"クリーン画像を正しく分類したサンプル数: {clean_acc_total}")
-    print(f"処理したサンプル総数: {total}")
+    print("[実験設定]")
+    print(f"  データセット: {cfg.dataset.value}")
+    print(f"  モデル: {cfg.model.value}")
+    print(f"  攻撃: {cfg.attack.value} ({attack_params_formatted})")
+    
+    print("\n[結果]")
+    print(f"  処理サンプル総数: {total}")
+    print(f"  クリーン画像を正しく分類したサンプル数: {clean_acc_total}")
+    print(f"  攻撃成功率: {attack_acc:.4f} = {fail} / {clean_acc_total}")
+    print("  攻撃成功率には，元の画像を正しく分類したサンプルのみを考慮している．")
+    print(f"  平均摂動量(L2ノルム): {mean_perturb:.4f}")
     print(f"結果は {csv_filename} に保存されました。")
     print("======================")
 
