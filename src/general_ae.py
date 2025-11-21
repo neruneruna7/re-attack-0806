@@ -1,32 +1,20 @@
 # モデルをトレーニングする汎用コード
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from torch.types import Number
 from typing import Any, Iterator, Optional, Tuple
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from torchvision import datasets, transforms
-import numpy as np
-import matplotlib.pyplot as plt
 import os
-import csv
-import sys
-from PIL import Image
-from torch import Tensor
-from enum import Enum
 import argparse
-import re_attack_0806
-from copy import deepcopy
-import concurrent.futures
+from torch import Tensor
 
-from re_attack_0806 import attacks, utils
-from re_attack_0806.attacks import bim, fgsm, linfbim
-import foolbox
-
-# AttackParamsをインポート
-from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm, AttackParams, FGSMAttackParam, BIMAttackParam
+from re_attack_0806 import utils
+from re_attack_0806.utils.config import AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm, AttackParams, FGSMAttackParam, BIMAttackParam, AttackParamsFactory
 from re_attack_0806.utils.normTensor import *
+from re_attack_0806.strategies.factory import AttackStrategyFactory
+from re_attack_0806.result_processor import ResultProcessor, AttackResult
+from re_attack_0806.path_manager import PathManager
 
 from tqdm import tqdm
 
@@ -59,15 +47,35 @@ class Config:
     dataset_norm: DatasetNorm
 
 class Runner:
+    """攻撃実行を統括するクラス
+    
+    このクラスは、モデルの読み込み、データローダーの準備、
+    攻撃の実行を担当します。ストラテジーパターンにより、
+    具体的な攻撃手法の実装は各ストラテジークラスに委譲されています。
+    """
+    
     def __init__(self, cfg: Config):
+        """Runnerの初期化
+        
+        Args:
+            cfg: 実行設定
+        """
         self.cfg = cfg
         self.device = cfg.device
         self.model = ModelFactory.create(cfg.model, self.device)
         self.test_loader = DataFactory.loader(cfg.dataset, train=False, batch_size=cfg.batch_size, shuffle=cfg.shuffle_dataloader)
         self._load_weights_if_exists(cfg.model_dir)
         self.model.eval()
+        
+        # 攻撃ストラテジーの取得
+        self.attack_strategy = AttackStrategyFactory.create(cfg.attack)
 
     def _load_weights_if_exists(self, model_dir: str):
+        """モデルの重みファイルが存在する場合は読み込む
+        
+        Args:
+            model_dir: モデルの重みが保存されているディレクトリ
+        """
         model_name = getattr(self.model, "model_name", None)
         if model_name is None:
             print(f"warning: model has no 'model_name' attribute (model class: {self.model.__class__.__name__}), skipping weight load")
@@ -83,6 +91,14 @@ class Runner:
 
     @staticmethod
     def _to_logits(output: Tensor) -> Tensor:
+        """モデル出力をロジットに変換
+        
+        Args:
+            output: モデルの出力テンソル
+            
+        Returns:
+            ロジットテンソル
+        """
         if output.dim() == 4:
             return output.mean(dim=(2, 3))
         if output.dim() > 2:
@@ -90,30 +106,15 @@ class Runner:
         return output
     
     def run(self) -> Iterator[Tuple[int, Number, Number, Number, TensorWithState, Number]]:
+        """攻撃を実行してイテレータを返す
+        
+        ストラテジーパターンにより、攻撃手法の具体的な実装は
+        各ストラテジークラスに委譲されています。
+        
+        Yields:
+            (index, target_label, pred_before, pred_after, perturbed_image, l2_perturbation)
+        """
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
-
-        fmodel = None
-        foolbox_attack = None
-        if self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            bounds = (0.0, 1.0)
-            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            if self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-                foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
-            elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
-                assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-                foolbox_attack = foolbox.attacks.FGSM()
-        elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
-            assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            bounds = (0.0, 1.0)
-            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            foolbox_attack = foolbox.attacks.FGSM(random_start=False) # type: ignore[reportPrivateImportUsage]
 
         global_idx = 0
         for data, target in tqdm(self.test_loader, desc="Attacking"):
@@ -125,43 +126,38 @@ class Runner:
             data_ts_norm = self.cfg.dataset_norm.normalize(data_ts)
             target_ts: Tensor = target.to(self.device).view(-1).long()
             
+            # クリーン画像での予測
             output = self.model(data_ts_norm.tensor)
             logits = self._to_logits(output)
             pred = logits.max(1, keepdim=True)[1]
 
-            if self.cfg.attack == AttackKind.BIM:
-                assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for BIM"
-                params = self.cfg.attack_params
-                perturbed = bim.bim(
-                    data_ts_norm, target, self.model, self.device, params.epsilon,
-                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
+            # ストラテジーパターンを使用して攻撃を実行
+            try:
+                perturbed = self.attack_strategy.execute(
+                    data_ts_norm,
+                    target_ts,
+                    self.model,
+                    self.device,
+                    self.cfg.dataset_norm,
+                    self.cfg.attack_params
                 )
-            elif self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-                assert fmodel is not None and foolbox_attack is not None, "Foolbox components not initialized"
-                try:
-                    raw, clipped, is_adv = foolbox_attack(fmodel, data_ts.tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
-                    __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-                    perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-                    perturbed = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-                except Exception as e:
-                    print(f"Foolbox {self.cfg.attack.value} attack failed: {e}")
-                    continue
-            elif self.cfg.attack == AttackKind.FGSM:
-                assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
-                perturbed = fgsm.fgsm(data_ts_norm, target_ts, self.model, self.device, self.cfg.attack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
-            else:
-                raise ValueError(f"unsupported attack kind: {self.cfg.attack}")
+            except Exception as e:
+                print(f"攻撃の実行に失敗しました: {e}")
+                continue
 
+            # 攻撃後の予測
             out2 = self.model(perturbed.tensor)
             logits2 = self._to_logits(out2)
             pred2 = logits2.max(1, keepdim=True)[1]
 
+            # 摂動量の計算
             denormalized_data = self.cfg.dataset_norm.denormalize(data_ts_norm)
             denormalized_perturbed = self.cfg.dataset_norm.denormalize(perturbed)
             
             perturbation_batch = denormalized_perturbed.tensor - denormalized_data.tensor
             l2_perturbations = torch.linalg.norm(perturbation_batch.view(current_batch_size, -1), ord=2, dim=1)
 
+            # バッチ内の各サンプルについて結果を yield
             for j in range(current_batch_size):
                 if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                     return
@@ -187,43 +183,208 @@ def fraction_float(s: str) -> float:
         raise argparse.ArgumentTypeError(f'"{s}" is not a valid float.')
 
 def parse_args() -> Config:
-    parser = argparse.ArgumentParser(description="general AE attack runner")
-    # 必須パラメータ
-    parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], required=True, help="Dataset to use.")
-    parser.add_argument("--model", choices=[m.value for m in ModelKind], required=True, help="Model to use.")
-    parser.add_argument("--attack", choices=[a.value for a in AttackKind], required=True, help="Attack method to use.")
+    """コマンドライン引数を解析してConfigを生成
     
-    # デフォルト値を持つパラメータ
-    parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR, help=f"Directory for model weights (default: {DEFAULT_MODEL_DIR})")
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"Directory to save attacked images (default: {DEFAULT_OUTPUT_DIR})")
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
-    parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
-    parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=False, help='Whether to save attacked images (default: False).')
-    parser.add_argument("--shuffle-dataloader", action="store_true", default=DEFAULT_SHUFFLE_DATALOADER, help=f"Shuffle the dataloader (default: {DEFAULT_SHUFFLE_DATALOADER}).")
-
-    # 攻撃ごとの任意パラメータ
-    parser.add_argument("--epsilon", type=fraction_float, default=None, help="Epsilon for attack.")
-    parser.add_argument("--alpha", type=fraction_float, default=None, help="Alpha for iterative attacks.")
-    parser.add_argument("--n", type=int, default=None, help="Number of iterations for iterative attacks.")
+    サブパーサーを使用することで、各攻撃手法に特化した引数を
+    直感的に指定できるようになっています。
+    
+    例:
+        python general_ae.py fgsm --dataset mnist --model morimoto-mnist --epsilon 0.3
+        python general_ae.py bim --dataset mnist --model morimoto-mnist --epsilon 0.3 --alpha 0.05 --n 10
+    
+    Returns:
+        パース済みの設定オブジェクト
+    """
+    parser = argparse.ArgumentParser(
+        description="敵対的サンプル生成のための汎用攻撃ツール",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  # FGSM攻撃でMNISTデータセットに対して攻撃
+  %(prog)s fgsm --dataset mnist --model morimoto-mnist --epsilon 0.3
+  
+  # BIM攻撃でCIFAR-10データセットに対して攻撃（10サンプルのみ）
+  %(prog)s bim --dataset cifar10 --model morimoto-cifar10 --epsilon 0.03 --alpha 0.01 --n 10 --num-samples 10
+  
+  # Foolbox FGSM攻撃で画像を保存
+  %(prog)s foolbox-fgsm --dataset mnist --model morimoto-mnist --epsilon 0.3 --save-images
+"""
+    )
+    
+    # サブパーサーの作成
+    subparsers = parser.add_subparsers(
+        dest='attack',
+        required=True,
+        help='使用する攻撃手法'
+    )
+    
+    # 共通引数を追加するヘルパー関数
+    def add_common_arguments(subparser: argparse.ArgumentParser):
+        """すべての攻撃手法に共通の引数を追加"""
+        subparser.add_argument(
+            "--dataset",
+            choices=[d.value for d in DatasetKind],
+            required=True,
+            help="使用するデータセット"
+        )
+        subparser.add_argument(
+            "--model",
+            choices=[m.value for m in ModelKind],
+            required=True,
+            help="使用するモデル"
+        )
+        subparser.add_argument(
+            "--model-dir",
+            default=DEFAULT_MODEL_DIR,
+            help=f"モデルの重みファイルが保存されているディレクトリ (デフォルト: {DEFAULT_MODEL_DIR})"
+        )
+        subparser.add_argument(
+            "--output-dir",
+            default=DEFAULT_OUTPUT_DIR,
+            help=f"攻撃結果の画像を保存するディレクトリ (デフォルト: {DEFAULT_OUTPUT_DIR})"
+        )
+        subparser.add_argument(
+            "--batch-size",
+            type=int,
+            default=DEFAULT_BATCH_SIZE,
+            help=f"バッチサイズ (デフォルト: {DEFAULT_BATCH_SIZE})"
+        )
+        subparser.add_argument(
+            "--num-samples",
+            type=int,
+            default=DEFAULT_NUM_SAMPLES,
+            help="処理するサンプル数。-1ですべて処理 (デフォルト: -1)"
+        )
+        subparser.add_argument(
+            '--save-images',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='攻撃後の画像を保存するかどうか (デフォルト: False)'
+        )
+        subparser.add_argument(
+            "--shuffle-dataloader",
+            action="store_true",
+            default=DEFAULT_SHUFFLE_DATALOADER,
+            help=f"データローダーをシャッフルする (デフォルト: {DEFAULT_SHUFFLE_DATALOADER})"
+        )
+    
+    # FGSM攻撃のサブパーサー
+    fgsm_parser = subparsers.add_parser(
+        'fgsm',
+        help='FGSM (Fast Gradient Sign Method) 攻撃',
+        description='FGSM攻撃は、勾配の符号を利用した高速な敵対的サンプル生成手法です。'
+    )
+    add_common_arguments(fgsm_parser)
+    fgsm_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の大きさ（最大ピクセル値の変化量）"
+    )
+    
+    # BIM攻撃のサブパーサー
+    bim_parser = subparsers.add_parser(
+        'bim',
+        help='BIM (Basic Iterative Method) 攻撃',
+        description='BIM攻撃は、FGSMを複数回反復して実行する攻撃手法です。'
+    )
+    add_common_arguments(bim_parser)
+    bim_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の最大値（L∞ノルム）"
+    )
+    bim_parser.add_argument(
+        "--alpha",
+        type=fraction_float,
+        required=True,
+        help="各反復でのステップサイズ"
+    )
+    bim_parser.add_argument(
+        "--n",
+        type=int,
+        required=True,
+        help="反復回数"
+    )
+    
+    # Foolbox FGSM攻撃のサブパーサー
+    foolbox_fgsm_parser = subparsers.add_parser(
+        'foolbox-fgsm',
+        help='Foolbox FGSM攻撃',
+        description='Foolboxライブラリを使用したFGSM攻撃です。'
+    )
+    add_common_arguments(foolbox_fgsm_parser)
+    foolbox_fgsm_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の大きさ（最大ピクセル値の変化量）"
+    )
+    
+    # Foolbox BIM攻撃のサブパーサー
+    foolbox_bim_parser = subparsers.add_parser(
+        'foolbox-bim',
+        help='Foolbox BIM攻撃',
+        description='Foolboxライブラリを使用したBIM攻撃です。'
+    )
+    add_common_arguments(foolbox_bim_parser)
+    foolbox_bim_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の最大値（L∞ノルム）"
+    )
+    foolbox_bim_parser.add_argument(
+        "--alpha",
+        type=fraction_float,
+        required=True,
+        help="各反復でのステップサイズ"
+    )
+    foolbox_bim_parser.add_argument(
+        "--n",
+        type=int,
+        required=True,
+        help="反復回数"
+    )
+    
+    # L∞ BIM攻撃のサブパーサー
+    linf_bim_parser = subparsers.add_parser(
+        'linf-bim',
+        help='L∞ BIM攻撃',
+        description='L∞ノルム制約付きBIM攻撃です。'
+    )
+    add_common_arguments(linf_bim_parser)
+    linf_bim_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の最大値（L∞ノルム）"
+    )
+    linf_bim_parser.add_argument(
+        "--alpha",
+        type=fraction_float,
+        required=True,
+        help="各反復でのステップサイズ"
+    )
+    linf_bim_parser.add_argument(
+        "--n",
+        type=int,
+        required=True,
+        help="反復回数"
+    )
     
     args = parser.parse_args()
 
-    # attack_kindに基づいてAttackParamsを生成・検証
+    # 攻撃種別に基づいてAttackParamsを生成（ファクトリーを使用）
     attack_kind = AttackKind(args.attack)
-    attack_params: AttackParams
-
-    if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM, AttackKind.LINF_BIM]:
-        if args.epsilon is None or args.alpha is None or args.n is None:
-            parser.error(f"{attack_kind.value} attack requires --epsilon, --alpha, and --n.")
-        attack_params = BIMAttackParam(epsilon=args.epsilon, alpha=args.alpha, iters=args.n, batch_size=args.batch_size)
-    
-    elif attack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
-        if args.epsilon is None:
-            parser.error(f"{attack_kind.value} attack requires --epsilon.")
-        attack_params = FGSMAttackParam(epsilon=args.epsilon, batch_size=args.batch_size)
-
-    else:
-        raise NotImplementedError(f"Parameter validation for {attack_kind.value} is not implemented.")
+    attack_params = AttackParamsFactory.create_from_args(
+        attack_kind=attack_kind,
+        epsilon=args.epsilon,
+        batch_size=args.batch_size,
+        alpha=getattr(args, 'alpha', None),
+        iters=getattr(args, 'n', None)
+    )
 
     dataset = DatasetKind(args.dataset)
     device = utils.get_device()
@@ -244,67 +405,45 @@ def parse_args() -> Config:
     )
 
 def main():
+    """メイン関数
+    
+    攻撃の実行、結果の処理、サマリーの出力を行います。
+    PathManagerとResultProcessorを使用することで、
+    責務が明確に分離されています。
+    """
     cfg = parse_args()
-    # parse_args内で検証されるため、ここでの検証は不要
     
     runner = Runner(cfg)
     result_generator = runner.run()
 
-    fail, clean_acc_total, total, mean_mean_perturb = 0, 0, 0, 0.0
-
-    # attack_paramsからepsilonを取得
-    eps_str = f"{cfg.attack_params.epsilon:.3f}"
+    # パス管理の一元化
+    path_manager = PathManager(cfg)
+    output_folder = path_manager.ensure_output_folder_exists()
+    csv_filepath = path_manager.get_csv_filepath()
     
-    output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.attack.value, f"eps_{eps_str}")
-    os.makedirs(output_folder, exist_ok=True)
+    # ResultProcessorを使用して結果を処理
+    with ResultProcessor(csv_filepath, output_folder, cfg.save_attacked_images) as processor:
+        for idx, target, before, after, perturbed_image, l2_perturb in result_generator:
+            result = AttackResult(
+                index=idx,
+                target_label=target,
+                prediction_before_attack=before,
+                prediction_after_attack=after,
+                l2_perturbation=l2_perturb
+            )
+            processor.process_result(result, perturbed_image)
+        
+        # サマリーの取得と出力
+        summary = processor.get_summary()
     
-    csv_filename = os.path.join(output_folder, "attack_results.csv")
-    
-    with concurrent.futures.ThreadPoolExecutor() as executor, open(csv_filename, 'w', newline='') as csvfile:
-        csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(["index", "target_label", "prediction_before_attack", "prediction_after_attack", "l2_perturbation", "image_filepath"])
-
-        for idx, target, before, after, ex, m in result_generator:
-            total += 1
-            if before == target:
-                clean_acc_total += 1
-                mean_mean_perturb += m
-                if after != before:
-                    fail += 1
-
-            output_filename = ""
-            if cfg.save_attacked_images:
-                output_filename = os.path.join(output_folder, f"idx_{idx}_label_{after}.png")
-                executor.submit(utils.save_tensor_as_image, ex.tensor, output_filename)
-            
-            csv_writer.writerow([idx, target, before, after, m, output_filename])
-
-    attack_acc = (fail / clean_acc_total) if clean_acc_total > 0 else 0.0
-    mean_perturb = (mean_mean_perturb / clean_acc_total) if clean_acc_total > 0 else 0.0
-
-    def format_params(params: AttackParams) -> str:
-        # dataclassを辞書に変換し、'batch_size'を除外
-        params_dict = asdict(params)
-        params_dict.pop('batch_size', None)
-        # 値を整形して、見やすい文字列を生成
-        return ", ".join([f"{k}: {v:.4g}" if isinstance(v, float) else f"{k}: {v}" for k, v in params_dict.items()])
-
-    attack_params_formatted = format_params(cfg.attack_params)
-
-    print("\n=== Attack Summary ===")
-    print("[実験設定]")
-    print(f"  データセット: {cfg.dataset.value}")
-    print(f"  モデル: {cfg.model.value}")
-    print(f"  攻撃: {cfg.attack.value} ({attack_params_formatted})")
-    
-    print("\n[結果]")
-    print(f"  処理サンプル総数: {total}")
-    print(f"  クリーン画像を正しく分類したサンプル数: {clean_acc_total}")
-    print(f"  攻撃成功率: {attack_acc:.4f} = {fail} / {clean_acc_total}")
-    print("  攻撃成功率には，元の画像を正しく分類したサンプルのみを考慮している．")
-    print(f"  平均摂動量(L2ノルム): {mean_perturb:.4f}")
-    print(f"結果は {csv_filename} に保存されました。")
-    print("======================")
+    ResultProcessor.print_summary(
+        summary,
+        cfg.dataset.value,
+        cfg.model.value,
+        cfg.attack.value,
+        cfg.attack_params,
+        csv_filepath
+    )
 
 if __name__ == "__main__":
     main()
