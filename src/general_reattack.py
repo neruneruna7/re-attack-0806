@@ -358,15 +358,15 @@ def main():
     total, clean_correct, attack_successful, reattack_successful, reattack_to_clean = \
         stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful'], stats['reattack_successful_to_clean']
     
-    print("\n=== Re-Attack Summary ===")
-    print(f"Processed {total} samples.")
-    print(f"Clean Accuracy: {clean_correct / total:.4f} ({clean_correct}/{total})")
+    print("\n=== 再攻撃概要 ===")
+    print(f"処理サンプル総数: {total}")
+    print(f"クリーン精度: {clean_correct / total:.4f} ({clean_correct}/{total})")
     if clean_correct > 0:
-        print(f"Initial Attack Success Rate: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
+        print(f"初回攻撃成功率: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
         if attack_successful > 0:
-            print(f"Re-Attack Success Rate (changed from attacked): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
-            print(f"Re-Attack Success Rate (to Clean): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
-    print(f"Results saved to {csv_filename}")
+            print(f"再攻撃成功率 (攻撃後から変化): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
+            print(f"再攻撃成功率 (クリーンに戻ったもの): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
+    print(f"結果は {csv_filename} に保存されました。")
     print("=========================")
 
 
