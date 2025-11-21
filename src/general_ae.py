@@ -183,43 +183,217 @@ def fraction_float(s: str) -> float:
         raise argparse.ArgumentTypeError(f'"{s}" is not a valid float.')
 
 def parse_args() -> Config:
-    parser = argparse.ArgumentParser(description="general AE attack runner")
-    # 必須パラメータ
-    parser.add_argument("--dataset", choices=[d.value for d in DatasetKind], required=True, help="Dataset to use.")
-    parser.add_argument("--model", choices=[m.value for m in ModelKind], required=True, help="Model to use.")
-    parser.add_argument("--attack", choices=[a.value for a in AttackKind], required=True, help="Attack method to use.")
+    """コマンドライン引数を解析してConfigを生成
     
-    # デフォルト値を持つパラメータ
-    parser.add_argument("--model-dir", default=DEFAULT_MODEL_DIR, help=f"Directory for model weights (default: {DEFAULT_MODEL_DIR})")
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"Directory to save attacked images (default: {DEFAULT_OUTPUT_DIR})")
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
-    parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
-    parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=False, help='Whether to save attacked images (default: False).')
-    parser.add_argument("--shuffle-dataloader", action="store_true", default=DEFAULT_SHUFFLE_DATALOADER, help=f"Shuffle the dataloader (default: {DEFAULT_SHUFFLE_DATALOADER}).")
-
-    # 攻撃ごとの任意パラメータ
-    parser.add_argument("--epsilon", type=fraction_float, default=None, help="Epsilon for attack.")
-    parser.add_argument("--alpha", type=fraction_float, default=None, help="Alpha for iterative attacks.")
-    parser.add_argument("--n", type=int, default=None, help="Number of iterations for iterative attacks.")
+    サブパーサーを使用することで、各攻撃手法に特化した引数を
+    直感的に指定できるようになっています。
+    
+    例:
+        python general_ae.py fgsm --dataset mnist --model morimoto-mnist --epsilon 0.3
+        python general_ae.py bim --dataset mnist --model morimoto-mnist --epsilon 0.3 --alpha 0.05 --n 10
+    
+    Returns:
+        パース済みの設定オブジェクト
+    """
+    parser = argparse.ArgumentParser(
+        description="敵対的サンプル生成のための汎用攻撃ツール",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用例:
+  # FGSM攻撃でMNISTデータセットに対して攻撃
+  %(prog)s fgsm --dataset mnist --model morimoto-mnist --epsilon 0.3
+  
+  # BIM攻撃でCIFAR-10データセットに対して攻撃（10サンプルのみ）
+  %(prog)s bim --dataset cifar10 --model morimoto-cifar10 --epsilon 0.03 --alpha 0.01 --n 10 --num-samples 10
+  
+  # Foolbox FGSM攻撃で画像を保存
+  %(prog)s foolbox-fgsm --dataset mnist --model morimoto-mnist --epsilon 0.3 --save-images
+"""
+    )
+    
+    # サブパーサーの作成
+    subparsers = parser.add_subparsers(
+        dest='attack',
+        required=True,
+        help='使用する攻撃手法'
+    )
+    
+    # 共通引数を追加するヘルパー関数
+    def add_common_arguments(subparser: argparse.ArgumentParser):
+        """すべての攻撃手法に共通の引数を追加"""
+        subparser.add_argument(
+            "--dataset",
+            choices=[d.value for d in DatasetKind],
+            required=True,
+            help="使用するデータセット"
+        )
+        subparser.add_argument(
+            "--model",
+            choices=[m.value for m in ModelKind],
+            required=True,
+            help="使用するモデル"
+        )
+        subparser.add_argument(
+            "--model-dir",
+            default=DEFAULT_MODEL_DIR,
+            help=f"モデルの重みファイルが保存されているディレクトリ (デフォルト: {DEFAULT_MODEL_DIR})"
+        )
+        subparser.add_argument(
+            "--output-dir",
+            default=DEFAULT_OUTPUT_DIR,
+            help=f"攻撃結果の画像を保存するディレクトリ (デフォルト: {DEFAULT_OUTPUT_DIR})"
+        )
+        subparser.add_argument(
+            "--batch-size",
+            type=int,
+            default=DEFAULT_BATCH_SIZE,
+            help=f"バッチサイズ (デフォルト: {DEFAULT_BATCH_SIZE})"
+        )
+        subparser.add_argument(
+            "--num-samples",
+            type=int,
+            default=DEFAULT_NUM_SAMPLES,
+            help="処理するサンプル数。-1ですべて処理 (デフォルト: -1)"
+        )
+        subparser.add_argument(
+            '--save-images',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='攻撃後の画像を保存するかどうか (デフォルト: False)'
+        )
+        subparser.add_argument(
+            "--shuffle-dataloader",
+            action="store_true",
+            default=DEFAULT_SHUFFLE_DATALOADER,
+            help=f"データローダーをシャッフルする (デフォルト: {DEFAULT_SHUFFLE_DATALOADER})"
+        )
+    
+    # FGSM攻撃のサブパーサー
+    fgsm_parser = subparsers.add_parser(
+        'fgsm',
+        help='FGSM (Fast Gradient Sign Method) 攻撃',
+        description='FGSM攻撃は、勾配の符号を利用した高速な敵対的サンプル生成手法です。'
+    )
+    add_common_arguments(fgsm_parser)
+    fgsm_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の大きさ（最大ピクセル値の変化量）"
+    )
+    
+    # BIM攻撃のサブパーサー
+    bim_parser = subparsers.add_parser(
+        'bim',
+        help='BIM (Basic Iterative Method) 攻撃',
+        description='BIM攻撃は、FGSMを複数回反復して実行する攻撃手法です。'
+    )
+    add_common_arguments(bim_parser)
+    bim_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の最大値（L∞ノルム）"
+    )
+    bim_parser.add_argument(
+        "--alpha",
+        type=fraction_float,
+        required=True,
+        help="各反復でのステップサイズ"
+    )
+    bim_parser.add_argument(
+        "--n",
+        type=int,
+        required=True,
+        help="反復回数"
+    )
+    
+    # Foolbox FGSM攻撃のサブパーサー
+    foolbox_fgsm_parser = subparsers.add_parser(
+        'foolbox-fgsm',
+        help='Foolbox FGSM攻撃',
+        description='Foolboxライブラリを使用したFGSM攻撃です。'
+    )
+    add_common_arguments(foolbox_fgsm_parser)
+    foolbox_fgsm_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の大きさ（最大ピクセル値の変化量）"
+    )
+    
+    # Foolbox BIM攻撃のサブパーサー
+    foolbox_bim_parser = subparsers.add_parser(
+        'foolbox-bim',
+        help='Foolbox BIM攻撃',
+        description='Foolboxライブラリを使用したBIM攻撃です。'
+    )
+    add_common_arguments(foolbox_bim_parser)
+    foolbox_bim_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の最大値（L∞ノルム）"
+    )
+    foolbox_bim_parser.add_argument(
+        "--alpha",
+        type=fraction_float,
+        required=True,
+        help="各反復でのステップサイズ"
+    )
+    foolbox_bim_parser.add_argument(
+        "--n",
+        type=int,
+        required=True,
+        help="反復回数"
+    )
+    
+    # L∞ BIM攻撃のサブパーサー
+    linf_bim_parser = subparsers.add_parser(
+        'linf-bim',
+        help='L∞ BIM攻撃',
+        description='L∞ノルム制約付きBIM攻撃です。'
+    )
+    add_common_arguments(linf_bim_parser)
+    linf_bim_parser.add_argument(
+        "--epsilon",
+        type=fraction_float,
+        required=True,
+        help="摂動の最大値（L∞ノルム）"
+    )
+    linf_bim_parser.add_argument(
+        "--alpha",
+        type=fraction_float,
+        required=True,
+        help="各反復でのステップサイズ"
+    )
+    linf_bim_parser.add_argument(
+        "--n",
+        type=int,
+        required=True,
+        help="反復回数"
+    )
     
     args = parser.parse_args()
 
-    # attack_kindに基づいてAttackParamsを生成・検証
+    # 攻撃種別に基づいてAttackParamsを生成
     attack_kind = AttackKind(args.attack)
     attack_params: AttackParams
 
     if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM, AttackKind.LINF_BIM]:
-        if args.epsilon is None or args.alpha is None or args.n is None:
-            parser.error(f"{attack_kind.value} attack requires --epsilon, --alpha, and --n.")
-        attack_params = BIMAttackParam(epsilon=args.epsilon, alpha=args.alpha, iters=args.n, batch_size=args.batch_size)
-    
+        attack_params = BIMAttackParam(
+            epsilon=args.epsilon,
+            alpha=args.alpha,
+            iters=args.n,
+            batch_size=args.batch_size
+        )
     elif attack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
-        if args.epsilon is None:
-            parser.error(f"{attack_kind.value} attack requires --epsilon.")
-        attack_params = FGSMAttackParam(epsilon=args.epsilon, batch_size=args.batch_size)
-
+        attack_params = FGSMAttackParam(
+            epsilon=args.epsilon,
+            batch_size=args.batch_size
+        )
     else:
-        raise NotImplementedError(f"Parameter validation for {attack_kind.value} is not implemented.")
+        raise NotImplementedError(f"攻撃手法 {attack_kind.value} のパラメータ検証が実装されていません。")
 
     dataset = DatasetKind(args.dataset)
     device = utils.get_device()
