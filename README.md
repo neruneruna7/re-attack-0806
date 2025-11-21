@@ -62,4 +62,43 @@ uv run src/general_reattack.py \
 - `--shuffle-dataloader`: データローダーをシャッフルします (デフォルト: 無効)。
 - `--no-save-images`: 生成された画像の保存を無効にします (デフォルト: 保存する)。
 
+### 3.4. タスクランナー (cargo make)
+
+本プロジェクトでは、`cargo make` をタスクランナーとして使用し、Pythonスクリプトの実行を簡素化しています。`Makefile.toml` に、よく使うコマンドや複雑な引数を持つコマンドが定義されています。
+
+#### 3.4.1. cargo-makeのインストール
+
+`cargo make` はRustのクレートであるため、[Rustの公式ドキュメント](https://www.rust-lang.org/tools/install)に従ってRustおよびCargoがインストールされている必要があります。
+インストール後、以下のコマンドで `cargo-make` を導入します。
+
+```bash
+cargo install cargo-make
+```
+
+#### 3.4.2. 利用可能なタスクの確認
+
+定義されているすべてのタスクと、その説明を一覧表示するには、以下のコマンドを実行します。
+
+```bash
+cargo make --list-all-steps
+```
+
+#### 3.4.3. タスクの実行例
+
+`Makefile.toml` に定義されているタスクは、`cargo make <task_name>` の形式で実行できます。
+
+- **CIFAR-10モデルの学習:**
+    ```bash
+    cargo make train-morimoto-cifar10
+    ```
+- **MNISTモデルへのBIM攻撃:**
+    ```bash
+    cargo make attack-morimoto-mnist-bim
+    ```
+- **ImageNetモデルへのFoolbox BIM攻撃 (バッチサイズ16、1024サンプル):**
+    ```bash
+    cargo make attack-foolbox-bim-advo
+    ```
+
+
 
