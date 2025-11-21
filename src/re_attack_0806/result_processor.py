@@ -26,7 +26,7 @@ class AttackResult:
 class AttackSummary:
     """攻撃結果のサマリーを格納するデータクラス"""
     total_samples: int
-    clean_accuracy_total: int
+    clean_correct_count: int
     attack_success_count: int
     attack_success_rate: float
     mean_perturbation: float
@@ -61,7 +61,7 @@ class ResultProcessor:
         
         # 統計情報の初期化
         self.total_samples = 0
-        self.clean_accuracy_total = 0
+        self.clean_correct_count = 0  # クリーン画像を正しく分類したサンプル数
         self.attack_success_count = 0
         self.total_perturbation = 0.0
     
@@ -115,7 +115,7 @@ class ResultProcessor:
         self.total_samples += 1
         
         if result.prediction_before_attack == result.target_label:
-            self.clean_accuracy_total += 1
+            self.clean_correct_count += 1
             self.total_perturbation += result.l2_perturbation
             
             if result.prediction_after_attack != result.prediction_before_attack:
@@ -153,20 +153,20 @@ class ResultProcessor:
             攻撃結果のサマリー
         """
         attack_success_rate = (
-            self.attack_success_count / self.clean_accuracy_total
-            if self.clean_accuracy_total > 0
+            self.attack_success_count / self.clean_correct_count
+            if self.clean_correct_count > 0
             else 0.0
         )
         
         mean_perturbation = (
-            self.total_perturbation / self.clean_accuracy_total
-            if self.clean_accuracy_total > 0
+            self.total_perturbation / self.clean_correct_count
+            if self.clean_correct_count > 0
             else 0.0
         )
         
         return AttackSummary(
             total_samples=self.total_samples,
-            clean_accuracy_total=self.clean_accuracy_total,
+            clean_correct_count=self.clean_correct_count,
             attack_success_count=self.attack_success_count,
             attack_success_rate=attack_success_rate,
             mean_perturbation=mean_perturbation
@@ -207,8 +207,8 @@ class ResultProcessor:
         
         print("\n[結果]")
         print(f"  処理サンプル総数: {summary.total_samples}")
-        print(f"  クリーン画像を正しく分類したサンプル数: {summary.clean_accuracy_total}")
-        print(f"  攻撃成功率: {summary.attack_success_rate:.4f} = {summary.attack_success_count} / {summary.clean_accuracy_total}")
+        print(f"  クリーン画像を正しく分類したサンプル数: {summary.clean_correct_count}")
+        print(f"  攻撃成功率: {summary.attack_success_rate:.4f} = {summary.attack_success_count} / {summary.clean_correct_count}")
         print("  攻撃成功率には、元の画像を正しく分類したサンプルのみを考慮している。")
         print(f"  平均摂動量(L2ノルム): {summary.mean_perturbation:.4f}")
         print(f"結果は {csv_filepath} に保存されました。")

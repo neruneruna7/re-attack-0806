@@ -1,9 +1,11 @@
 """Foolbox関連の共通ユーティリティ"""
 import torch
 import torch.nn as nn
+from torch import Tensor
 import foolbox
 
 from re_attack_0806.utils.config import DatasetNorm
+from re_attack_0806.utils.normTensor import TensorWithState, DENORMALIZED
 
 
 class FoolboxModelCreator:
@@ -40,3 +42,22 @@ class FoolboxModelCreator:
             preprocessing=preprocessing,
             device=device
         )
+    
+    @staticmethod
+    def extract_perturbed_tensor(foolbox_result: tuple) -> Tensor:
+        """Foolbox攻撃結果から摂動を加えたテンソルを抽出
+        
+        Foolboxの攻撃メソッドは (raw, clipped, is_adv) のタプルを返します。
+        clippedはテンソルまたはテンソルのリスト/タプルの場合があります。
+        
+        Args:
+            foolbox_result: Foolbox攻撃メソッドの戻り値 (raw, clipped, is_adv)
+            
+        Returns:
+            摂動を加えたテンソル
+        """
+        _, clipped, _ = foolbox_result
+        
+        if isinstance(clipped, (list, tuple)):
+            return clipped[0]
+        return clipped

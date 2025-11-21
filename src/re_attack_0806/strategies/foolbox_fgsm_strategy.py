@@ -55,15 +55,15 @@ class FoolboxFGSMAttackStrategy(AttackStrategy):
         data_denorm = dataset_norm.denormalize(data_ts_norm)
         
         try:
-            raw, clipped, is_adv = foolbox_attack(
+            foolbox_result = foolbox_attack(
                 fmodel,
                 data_denorm.tensor,
                 target_ts,
                 epsilons=attack_params.epsilon
             )
             
-            # 結果の処理
-            perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+            # 結果の処理（共通ユーティリティを使用）
+            perturbed_denorm = FoolboxModelCreator.extract_perturbed_tensor(foolbox_result)
             perturbed_denorm_ts = TensorWithState(perturbed_denorm, DENORMALIZED)
             perturbed = dataset_norm.normalize(perturbed_denorm_ts)
             

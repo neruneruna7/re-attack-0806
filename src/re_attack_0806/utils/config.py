@@ -114,7 +114,10 @@ class AttackParamsFactory:
         """
         if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM, AttackKind.LINF_BIM]:
             if alpha is None or iters is None:
-                raise ValueError(f"{attack_kind.value} 攻撃には --alpha と --n が必要です。")
+                raise ValueError(
+                    f"{attack_kind.value} 攻撃には alpha（ステップサイズ）と "
+                    f"iters（反復回数）パラメータが必要です。"
+                )
             return BIMAttackParam(
                 epsilon=epsilon,
                 alpha=alpha,
