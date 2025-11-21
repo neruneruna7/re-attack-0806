@@ -20,7 +20,7 @@ class FoolboxModelCreator:
         model: nn.Module,
         dataset_norm: DatasetNorm,
         device: torch.device
-    ) -> foolbox.PyTorchModel:
+    ) -> foolbox.PyTorchModel:  # pyright: ignore[reportPrivateImportUsage]
         """Foolboxモデルを作成
         
         Args:
@@ -36,7 +36,7 @@ class FoolboxModelCreator:
         preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
         bounds = (0.0, 1.0)
         
-        return foolbox.PyTorchModel(
+        return foolbox.PyTorchModel( # pyright: ignore[reportPrivateImportUsage]
             model,
             bounds=bounds,
             preprocessing=preprocessing,

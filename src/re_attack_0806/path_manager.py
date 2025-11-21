@@ -15,6 +15,7 @@ class PathManager:
     単一責任原則に基づき、パス生成ロジックをこのクラスに集約しています。
     """
     
+    # これは問題があるな
     config: 'Any'  # Configオブジェクト（型チェックを避けるためAnyを使用）
     
     def get_output_folder(self) -> str:
