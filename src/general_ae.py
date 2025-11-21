@@ -94,14 +94,26 @@ class Runner:
 
         fmodel = None
         foolbox_attack = None
-        if self.cfg.attack == AttackKind.FOOLBOX_BIM:
-            assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
+        if self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
             mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
             std_list = self.cfg.dataset_norm.std.squeeze().tolist()
             preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
             bounds = (0.0, 1.0)
             fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
+            if self.cfg.attack == AttackKind.FOOLBOX_BIM:
+                assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
+                foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
+            elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
+                assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+                foolbox_attack = foolbox.attacks.FGSM()
+        elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
+            assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
+            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
+            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+            bounds = (0.0, 1.0)
+            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+            foolbox_attack = foolbox.attacks.FGSM() # type: ignore[reportPrivateImportUsage]
 
         global_idx = 0
         for data, target in tqdm(self.test_loader, desc="Attacking"):
@@ -124,16 +136,15 @@ class Runner:
                     data_ts_norm, target, self.model, self.device, params.epsilon,
                     params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
                 )
-            elif self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-                assert fmodel is not None and foolbox_attack is not None, "FoolboxBIM components not initialized"
+            elif self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
+                assert fmodel is not None and foolbox_attack is not None, "Foolbox components not initialized"
                 try:
                     raw, clipped, is_adv = foolbox_attack(fmodel, data_ts.tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
                     __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
                     perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
                     perturbed = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
                 except Exception as e:
-                    print(f"Foolbox BIM attack failed: {e}")
+                    print(f"Foolbox {self.cfg.attack.value} attack failed: {e}")
                     continue
             elif self.cfg.attack == AttackKind.FGSM:
                 assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
@@ -187,7 +198,7 @@ def parse_args() -> Config:
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help=f"Directory to save attacked images (default: {DEFAULT_OUTPUT_DIR})")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"Batch size (default: {DEFAULT_BATCH_SIZE})")
     parser.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES, help="Number of samples to process. -1 for all. (default: -1)")
-    parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=True, help='Save attacked images (default). Use --no-save-images to disable.')
+    parser.add_argument('--save-images', action=argparse.BooleanOptionalAction, default=False, help='Whether to save attacked images (default: False).')
     parser.add_argument("--shuffle-dataloader", action="store_true", default=DEFAULT_SHUFFLE_DATALOADER, help=f"Shuffle the dataloader (default: {DEFAULT_SHUFFLE_DATALOADER}).")
 
     # 攻撃ごとの任意パラメータ
@@ -201,20 +212,15 @@ def parse_args() -> Config:
     attack_kind = AttackKind(args.attack)
     attack_params: AttackParams
 
-    if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM]:
+    if attack_kind in [AttackKind.BIM, AttackKind.FOOLBOX_BIM, AttackKind.LINF_BIM]:
         if args.epsilon is None or args.alpha is None or args.n is None:
             parser.error(f"{attack_kind.value} attack requires --epsilon, --alpha, and --n.")
         attack_params = BIMAttackParam(epsilon=args.epsilon, alpha=args.alpha, iters=args.n, batch_size=args.batch_size)
     
-    elif attack_kind == AttackKind.FGSM:
+    elif attack_kind in [AttackKind.FGSM, AttackKind.FOOLBOX_FGSM]:
         if args.epsilon is None:
-            parser.error("FGSM attack requires --epsilon.")
+            parser.error(f"{attack_kind.value} attack requires --epsilon.")
         attack_params = FGSMAttackParam(epsilon=args.epsilon, batch_size=args.batch_size)
-    
-    elif attack_kind == AttackKind.LINF_BIM:
-         if args.epsilon is None or args.alpha is None or args.n is None:
-            parser.error(f"{attack_kind.value} attack requires --epsilon, --alpha, and --n.")
-         attack_params = BIMAttackParam(epsilon=args.epsilon, alpha=args.alpha, iters=args.n, batch_size=args.batch_size)
 
     else:
         raise NotImplementedError(f"Parameter validation for {attack_kind.value} is not implemented.")

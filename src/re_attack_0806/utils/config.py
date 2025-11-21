@@ -35,6 +35,7 @@ class ModelKind(str, Enum):
 class AttackKind(str, Enum):
     BIM = "bim"
     FGSM = "fgsm"
+    FOOLBOX_FGSM = "foolbox-fgsm"
     FOOLBOX_BIM = "foolbox-bim"
     LINF_BIM = "linf-bim"
 
@@ -74,6 +75,7 @@ class AttackParamKind(Enum):
 ATTACK_KIND_TO_PARAM: dict[AttackKind, AttackParamKind] = {
     AttackKind.FGSM: AttackParamKind.FGSM,
     AttackKind.BIM: AttackParamKind.BIM,
+    AttackKind.FOOLBOX_FGSM: AttackParamKind.FGSM,
     AttackKind.FOOLBOX_BIM: AttackParamKind.FOOLBOX_BIM,
     AttackKind.LINF_BIM: AttackParamKind.BIM,
 }

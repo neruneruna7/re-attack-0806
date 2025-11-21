@@ -41,6 +41,26 @@
         "128",
     ]
 
+[tasks.attack-morimoto-cifar10-foolbox-fgsm]
+    description="Attack Morimoto CIFAR-10 model with FGSM"
+    category="Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--attack",
+        "foolbox-fgsm",
+        "--epsilon",
+        "0.3",
+        "--batch-size",
+        "128",
+    ]
+
+
 
 [tasks.attack-morimoto-cifar10-bim]
     description="Attack Morimoto CIFAR-10 model with BIM"
@@ -153,6 +173,26 @@
         "128",
     ]
 
+[tasks.attack-morimoto-mnist-foolbox-fgsm]
+    description="Attack Morimoto MNIST model with FGSM"
+    category="Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "mnist",
+        "--model",
+        "morimoto-mnist",
+        "--attack",
+        "foolbox-fgsm",
+        "--epsilon",
+        "0.3",
+        "--batch-size",
+        "128",
+    ]
+
+
 [tasks.attack-sample-ploof]
     description="Attack Ploof model on MNIST with FGSM"
     category="Attacks"
@@ -214,6 +254,52 @@
         "1/255",
         "--n",
         "10",
+        "--batch-size",
+        "16",
+        "--num-samples",
+        "1024",
+        "--shuffle-dataloader",
+    ]
+    # バッチサイズが64だとメモリ不足になる
+
+[tasks.attack-fgsm-advo]
+    description="Attack InceptionV3 model on ImageNet with FGSM"
+    category="Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "imagenet",
+        "--model",
+        "inception-v3",
+        "--attack",
+        "fgsm",
+        "--epsilon",
+        "8/255",
+        "--batch-size",
+        "16",
+        "--num-samples",
+        "1024",
+        "--shuffle-dataloader",
+    ]
+    # バッチサイズが64だとメモリ不足になる
+
+[tasks.attack-foolbox-fgsm-advo]
+    description="Attack InceptionV3 model on ImageNet with foolbox FGSM"
+    category="Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "imagenet",
+        "--model",
+        "inception-v3",
+        "--attack",
+        "foolbox-fgsm",
+        "--epsilon",
+        "8/255",
         "--batch-size",
         "16",
         "--num-samples",
