@@ -11,7 +11,7 @@ use burn::{
 };
 use tracing::{info, instrument};
 
-use crate::{bim::ClassificationModel, data::MnistBatch};
+use crate::{ClassificationModel, data::MnistBatch};
 
 const NUM_CLASSES: usize = 10;
 

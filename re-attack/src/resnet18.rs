@@ -300,7 +300,7 @@ impl<B: Backend> ValidStep<MnistBatch<B>, ClassificationOutput<B>> for ResNet18<
     }
 }
 
-use super::bim::ClassificationModel;
+use crate::ClassificationModel;
 
 impl<B: Backend> ClassificationModel<B> for ResNet18<B> {
     fn forward(&self, input: Tensor<B, 4>) -> Tensor<B, 2> {

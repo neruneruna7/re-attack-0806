@@ -1,12 +1,12 @@
-use burn::backend::wgpu::graphics::WebGpu;
+use burn::backend::wgpu::Wgpu;
 use burn::data::dataset::vision::MnistDataset;
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::nn::{LinearConfig, PaddingConfig2d, conv::Conv2dConfig};
 use burn::prelude::*;
 use burn::{
     backend::{
-        Autodiff, NdArray, Wgpu,
-        wgpu::{Metal, WgpuDevice},
+        Autodiff, NdArray,
+        wgpu::WgpuDevice,
     },
     data::dataset::Dataset,
 };
