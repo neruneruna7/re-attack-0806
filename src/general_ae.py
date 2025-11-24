@@ -92,21 +92,6 @@ class Runner:
     def run(self) -> Iterator[Tuple[int, Number, Number, Number, TensorWithState, Number]]:
         print(f"Running attack {self.cfg.attack} on model {self.cfg.model} with cfg: {self.cfg}")
 
-        fmodel = None
-        foolbox_attack = None
-        if self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-            mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            bounds = (0.0, 1.0)
-            fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            if self.cfg.attack == AttackKind.FOOLBOX_BIM:
-                assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-                foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
-            elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
-                assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-                foolbox_attack = foolbox.attacks.FGSM()
-
         global_idx = 0
         for data, target in tqdm(self.test_loader, desc="Attacking"):
             if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
@@ -128,16 +113,29 @@ class Runner:
                     data_ts_norm, target, self.model, self.device, params.epsilon,
                     params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
                 )
-            elif self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-                assert fmodel is not None and foolbox_attack is not None, "Foolbox components not initialized"
-                try:
-                    raw, clipped, is_adv = foolbox_attack(fmodel, data_ts.tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
-                    __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-                    perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-                    perturbed = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-                except Exception as e:
-                    print(f"Foolbox {self.cfg.attack.value} attack failed: {e}")
-                    continue
+            # elif self.cfg.attack in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
+            #     mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
+            #     std_list = self.cfg.dataset_norm.std.squeeze().tolist()
+            #     preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+            #     bounds = (0.0, 1.0)
+            #     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+            #     foolbox_attack = None
+            #     if self.cfg.attack == AttackKind.FOOLBOX_BIM:
+            #         assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
+            #         foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
+            #     elif self.cfg.attack == AttackKind.FOOLBOX_FGSM:
+            #         assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+            #         foolbox_attack = foolbox.attacks.FGSM()
+            #     else:
+            #         raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.attack}")
+            #     try:
+            #         raw, clipped, is_adv = foolbox_attack(fmodel, data_ts.tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
+            #         __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+            #         perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
+            #         perturbed = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
+            #     except Exception as e:
+            #         print(f"Foolbox {self.cfg.attack.value} attack failed: {e}")
+            #         continue
             elif self.cfg.attack == AttackKind.FGSM:
                 assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
                 perturbed = fgsm.fgsm(data_ts_norm, target_ts, self.model, self.device, self.cfg.attack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)

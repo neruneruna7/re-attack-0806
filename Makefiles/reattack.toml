@@ -57,6 +57,38 @@
         "128",
     ]
 
+[tasks.reattack-morimoto-cifar10-foolbox-bim-foolbox-bim]
+    description="Re-attack Morimoto CIFAR10 model with BIM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "morimoto-cifar10",
+        "--attack-kind",
+        "foolbox-bim",
+        "--attack-eps",
+        "0.3",
+        "--attack-alpha",
+        "0.05",
+        "--attack-n",
+        "10",
+        "--reattack-kind",
+        "foolbox-bim",
+        "--reattack-eps",
+        "0.3",
+        "--reattack-alpha",
+        "0.05",
+        "--reattack-n",
+        "10",
+        "--batch-size",
+        "128",
+    ]
+
+
 [tasks.reattack-morimoto-cifar10-foolbox-fgsm-foolbox-fgsm]
     description="Re-attack Morimoto CIFAR10 model with Foolbox FGSM -> Foolbox FGSM"
     category="Re-Attacks"
@@ -107,3 +139,69 @@
         "128",
     ]
 
+
+[tasks.reattack-inceptionv3-imagenet-bim-bim]
+    description="Re-attack InceptionV3 ImageNet model with FGSM -> BIM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "imagenet",
+        "--model",
+        "inception-v3",
+        "--attack-kind",
+        "bim",
+        "--attack-eps",
+        "0.3",
+        "--attack-alpha",
+        "0.05",
+        "--attack-n",
+        "10",
+        "--reattack-kind",
+        "bim",
+        "--reattack-eps",
+        "0.3",
+        "--reattack-alpha",
+        "0.05",
+        "--reattack-n",
+        "10",
+        "--batch-size",
+        "32",
+        "--num-samples",
+        "1024",
+    ]
+
+[tasks.reattack-inceptionv3-imagenet-foolbox-bim-foolbox-bim]
+    description="Re-attack InceptionV3 ImageNet model with FGSM -> BIM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "imagenet",
+        "--model",
+        "inception-v3",
+        "--attack-kind",
+        "foolbox-bim",
+        "--attack-eps",
+        "0.3",
+        "--attack-alpha",
+        "0.05",
+        "--attack-n",
+        "10",
+        "--reattack-kind",
+        "foolbox-bim",
+        "--reattack-eps",
+        "0.3",
+        "--reattack-alpha",
+        "0.05",
+        "--reattack-n",
+        "10",
+        "--batch-size",
+        "32",
+        "--num-samples",
+        "1024",
+    ]

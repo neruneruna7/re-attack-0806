@@ -212,6 +212,12 @@ class Runner:
             logits_reattacked = self._to_logits(self.model(reattacked_data_ts_norm.tensor))
             pred_reattacked = logits_reattacked.max(1, keepdim=True)[1]
 
+            probs = F.softmax(logits_attacked, dim=1)
+            conf_max = probs.max(1)[0]
+            # print(f"Confidence of attacked sample: {conf_max.item()}")
+            print(f"Confidence - Mean: {conf_max.mean().item():.4f}, Max: {conf_max.max().item():.4f}, Min: {conf_max.min().item():.4f}")
+
+
             reattacked_data_denorm = self.cfg.dataset_norm.denormalize(reattacked_data_ts_norm).tensor
             for j in range(current_batch_size):
                 if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:

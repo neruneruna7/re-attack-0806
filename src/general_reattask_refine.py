@@ -1,7 +1,7 @@
 # 再攻撃を実行し、その結果を評価・保存する汎用コード
 from dataclasses import dataclass, field, asdict
 from torch.types import Number
-from typing import Any, Final, Iterator, Optional, Tuple
+from typing import Any, Iterator, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -59,18 +59,6 @@ class Config:
     device: torch.device
     dataset_norm: DatasetNorm
 
-@dataclass
-class ReAttackResult:
-    """再攻撃実験の1サンプル分の結果を保持するクラス"""
-    index: int
-    target_label: int
-    pred_clean: int
-    pred_attacked: int
-    pred_reattacked: int
-    l2_clean_vs_attacked: float
-    l2_attacked_vs_reattacked: float
-    l2_clean_vs_reattacked: float
-    reattacked_image_ts: TensorWithState # 画像データ（保存用）
 
 class Runner:
     def __init__(self, cfg: Config):
@@ -201,7 +189,7 @@ class Runner:
     #     else:
     #         raise ValueError(f"unsupported attack kind: {kind}")
 
-    def run(self) -> Iterator[ReAttackResult]:
+    def run(self) -> Iterator[Tuple]:
         print(f"Running Re-Attack with config: {self.cfg}")
 
         model = self.model.eval()
@@ -211,7 +199,113 @@ class Runner:
             if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                 break
             
-            current_batch_size, target_ts, pred_clean, pred_attacked, pred_reattacked, reattacked_data_denorm, l2_clean_vs_attacked, l2_attacked_vs_reattacked, l2_clean_vs_reattacked = self.inner_loop(data, target)
+            current_batch_size = data.shape[0]
+            clean_data_ts = TensorWithState(data.to(self.device), DENORMALIZED)
+            clean_data_ts_norm = self.cfg.dataset_norm.normalize(clean_data_ts)
+            target_ts: Tensor = target.to(self.device).view(-1).long()
+            
+            # クリーンデータ推論
+            logits_clean = self._to_logits(self.model(clean_data_ts_norm.tensor))
+            pred_clean = logits_clean.max(1, keepdim=True)[1]
+
+            # _perform_attackは常に正規化データを返すので、データの状態管理がシンプルになる
+            # attacked_data_ts_norm = self._perform_attack(clean_data_ts_norm, target_ts, self.cfg.attack_kind, self.cfg.attack_params)
+            # 攻撃コード開始
+            if self.cfg.attack_kind == AttackKind.BIM:
+                assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for BIM"
+                params = self.cfg.attack_params
+                attacked_ts_norm = bim.bim(
+                    clean_data_ts_norm, target_ts, self.model, self.device, params.epsilon,
+                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
+                )
+            elif self.cfg.attack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
+                mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
+                std_list = self.cfg.dataset_norm.std.squeeze().tolist()
+                preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+                bounds = (0.0, 1.0)
+                fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+                foolbox_attack = None
+                if self.cfg.attack_kind == AttackKind.FOOLBOX_BIM:
+                    assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
+                    foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
+                elif self.cfg.attack_kind == AttackKind.FOOLBOX_FGSM:
+                    assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+                    foolbox_attack = foolbox.attacks.FGSM()
+                else:
+                    raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.attack_kind}")
+                try:
+                    raw, clipped, is_adv = foolbox_attack(fmodel, clean_data_ts_norm.tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
+                    __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+                    perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
+                    attacked_ts_norm = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
+                except Exception as e:
+                    print(f"Foolbox {self.cfg.attack_kind.value} attack failed: {e}")
+                    continue
+            elif self.cfg.attack_kind == AttackKind.FGSM:
+                assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
+                attacked_ts_norm = fgsm.fgsm(clean_data_ts_norm, target_ts, self.model, self.device, self.cfg.attack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
+            else:
+                raise ValueError(f"unsupported attack kind: {self.cfg.attack_kind}")
+            # 攻撃コード終了
+
+            # 攻撃後推論
+            out_attacked = self.model(attacked_ts_norm.tensor)
+            logits_attacked = self._to_logits(out_attacked)
+            pred_attacked = logits_attacked.max(1, keepdim=True)[1]
+
+            reattack_target = pred_attacked.view(-1)
+            # reattacked_data_ts_norm = self._perform_attack(attacked_data_ts_norm, reattack_target, self.cfg.reattack_kind, self.cfg.reattack_params)
+            # 再攻撃コード開始
+            if self.cfg.reattack_kind == AttackKind.BIM:
+                assert isinstance(self.cfg.reattack_params, BIMAttackParam), "Invalid params for BIM"
+                params = self.cfg.reattack_params
+                reattacked_ts_norm = bim.bim(
+                    attacked_ts_norm, reattack_target, self.model, self.device, params.epsilon,
+                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
+                )
+            elif self.cfg.reattack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
+                mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
+                std_list = self.cfg.dataset_norm.std.squeeze().tolist()
+                preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+                bounds = (0.0, 1.0)
+                fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+                foolbox_attack = None
+                if self.cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
+                    assert isinstance(self.cfg.reattack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
+                    foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.reattack_params.iters, abs_stepsize=self.cfg.reattack_params.alpha) # type: ignore[reportPrivateImportUsage]
+                elif self.cfg.reattack_kind == AttackKind.FOOLBOX_FGSM:
+                    assert isinstance(self.cfg.reattack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+                    foolbox_attack = foolbox.attacks.FGSM()
+                else:
+                    raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.reattack_kind}")
+                try:
+                    raw, clipped, is_adv = foolbox_attack(fmodel, attacked_ts_norm.tensor, reattack_target, epsilons=self.cfg.reattack_params.epsilon)
+                    __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+                    perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
+                    reattacked_ts_norm = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
+                except Exception as e:
+                    print(f"Foolbox {self.cfg.reattack_kind.value} attack failed: {e}")
+                    continue
+            elif self.cfg.reattack_kind == AttackKind.FGSM:
+                assert isinstance(self.cfg.reattack_params, FGSMAttackParam), "Invalid params for FGSM"
+                reattacked_ts_norm = fgsm.fgsm(attacked_ts_norm, reattack_target, self.model, self.device, self.cfg.reattack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
+            else:
+                raise ValueError(f"unsupported attack kind: {self.cfg.reattack_kind}")
+            # 再攻撃コード終了
+
+            # 再攻撃後推論
+            out_reattacked = self.model(reattacked_ts_norm.tensor)
+            logits_reattacked = self._to_logits(out_reattacked)
+            pred_reattacked = logits_reattacked.max(1, keepdim=True)[1]
+
+            # --- 以降、評価と結果のyield ---
+            clean_data_denorm = self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor
+            attacked_data_denorm = self.cfg.dataset_norm.denormalize(attacked_ts_norm).tensor
+            reattacked_data_denorm = self.cfg.dataset_norm.denormalize(reattacked_ts_norm).tensor
+
+            l2_clean_vs_attacked = torch.linalg.norm((clean_data_denorm - attacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
+            l2_attacked_vs_reattacked = torch.linalg.norm((attacked_data_denorm - reattacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
+            l2_clean_vs_reattacked = torch.linalg.norm((clean_data_denorm - reattacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
 
             for j in range(current_batch_size):
                 if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
@@ -219,139 +313,12 @@ class Runner:
 
                 reattacked_sample_denorm_ts = TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
 
-                print(f"Index {global_idx}: Target {target_ts[j].item()}, Clean Pred {pred_clean.view(-1)[j].item()}, Attacked Pred {pred_attacked.view(-1)[j].item()}, Reattacked Pred {pred_reattacked.view(-1)[j].item()}")
-
-                yield ReAttackResult(
-                index=global_idx,
-                target_label=target_ts[j].item().as_integer_ratio()[0],
-                pred_clean=pred_clean.view(-1)[j].item().as_integer_ratio()[0],
-                pred_attacked=pred_attacked.view(-1)[j].item().as_integer_ratio()[0],
-                pred_reattacked=pred_reattacked.view(-1)[j].item().as_integer_ratio()[0],
-                l2_clean_vs_attacked=l2_clean_vs_attacked[j].item(),
-                l2_attacked_vs_reattacked=l2_attacked_vs_reattacked[j].item(),
-                l2_clean_vs_reattacked=l2_clean_vs_reattacked[j].item(),
-                reattacked_image_ts=reattacked_sample_denorm_ts
-            )
+                yield (
+                    global_idx, target_ts[j].item(), pred_clean.view(-1)[j].item(), pred_attacked.view(-1)[j].item(),
+                    pred_reattacked.view(-1)[j].item(), l2_clean_vs_attacked[j].item(), l2_attacked_vs_reattacked[j].item(),
+                    l2_clean_vs_reattacked[j].item(), reattacked_sample_denorm_ts
+                )
                 global_idx += 1
-
-    def inner_loop(self, data, target):
-        current_batch_size = data.shape[0]
-        clean_data_ts: Final[DenormTensor] = TensorWithState(data.to(self.device), DENORMALIZED)
-        clean_data_ts_norm: Final[NormTensor] = self.cfg.dataset_norm.normalize(clean_data_ts)
-        target_ts: Final[Tensor] = target.to(self.device).view(-1).long()
-            
-            # クリーンデータ推論
-        output_clean: Final[Tensor] = self.model(clean_data_ts_norm.tensor)
-        logits_clean: Final[Tensor] = self._to_logits(output_clean)
-        pred_clean: Final[Tensor] = logits_clean.max(1, keepdim=True)[1]
-
-            # _perform_attackは常に正規化データを返すので、データの状態管理がシンプルになる
-            # attacked_data_ts_norm = self._perform_attack(clean_data_ts_norm, target_ts, self.cfg.attack_kind, self.cfg.attack_params)
-            # 攻撃コード開始
-        if self.cfg.attack_kind == AttackKind.BIM:
-            assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for BIM"
-            params = self.cfg.attack_params
-            attacked_ts_norm  = bim.bim(
-                    clean_data_ts_norm, target_ts, self.model, self.device, params.epsilon,
-                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
-                )
-            # elif self.cfg.attack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-            #     mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            #     std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            #     preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            #     bounds = (0.0, 1.0)
-            #     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            #     foolbox_attack = None
-            #     if self.cfg.attack_kind == AttackKind.FOOLBOX_BIM:
-            #         assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-            #         foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
-            #     elif self.cfg.attack_kind == AttackKind.FOOLBOX_FGSM:
-            #         assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-            #         foolbox_attack = foolbox.attacks.FGSM()
-            #     else:
-            #         raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.attack_kind}")
-            #     try:
-            #         raw, clipped, is_adv = foolbox_attack(fmodel, self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
-            #         __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-            #         perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-            #         attacked_ts_norm = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-            #     except Exception as e:
-            #         print(f"Foolbox {self.cfg.attack_kind.value} attack failed: {e}")
-            #         continue
-        elif self.cfg.attack_kind == AttackKind.FGSM:
-            assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
-            attacked_ts_norm = fgsm.fgsm(clean_data_ts_norm, target_ts, self.model, self.device, self.cfg.attack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
-        else:
-            raise ValueError(f"unsupported attack kind: {self.cfg.attack_kind}")
-            # 攻撃コード終了
-        attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
-
-            # 攻撃後推論
-        out_attacked: Final[Tensor] = self.model(attacked_ts_norm_f.tensor)
-        logits_attacked: Final[Tensor] = self._to_logits(out_attacked)
-        pred_attacked: Final[Tensor] = logits_attacked.max(1, keepdim=True)[1]
-
-
-        # probs = F.softmax(logits_attacked, dim=1)
-        # conf_max = probs.max(1)[0]
-        # # print(f"Confidence of attacked sample: {conf_max.item()}")
-        # print(f"Confidence - Mean: {conf_max.mean().item():.4f}, Max: {conf_max.max().item():.4f}, Min: {conf_max.min().item():.4f}")
-
-        reattack_target: Final[Tensor] = pred_attacked.view(-1).long()
-            # reattacked_data_ts_norm = self._perform_attack(attacked_data_ts_norm, reattack_target, self.cfg.reattack_kind, self.cfg.reattack_params)
-            # 再攻撃コード開始
-        if self.cfg.reattack_kind == AttackKind.BIM:
-            assert isinstance(self.cfg.reattack_params, BIMAttackParam), "Invalid params for BIM"
-            params = self.cfg.reattack_params
-            reattacked_ts_norm = bim.bim(
-                    attacked_ts_norm_f, reattack_target, self.model, self.device, params.epsilon,
-                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
-                )
-            # elif self.cfg.reattack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-            #     mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            #     std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            #     preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            #     bounds = (0.0, 1.0)
-            #     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            #     foolbox_attack = None
-            #     if self.cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
-            #         assert isinstance(self.cfg.reattack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-            #         foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.reattack_params.iters, abs_stepsize=self.cfg.reattack_params.alpha) # type: ignore[reportPrivateImportUsage]
-            #     elif self.cfg.reattack_kind == AttackKind.FOOLBOX_FGSM:
-            #         assert isinstance(self.cfg.reattack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-            #         foolbox_attack = foolbox.attacks.FGSM()
-            #     else:
-            #         raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.reattack_kind}")
-            #     try:
-            #         raw, clipped, is_adv = foolbox_attack(fmodel,  self.cfg.dataset_norm.denormalize(attacked_ts_norm).tensor, reattack_target, epsilons=self.cfg.reattack_params.epsilon)
-            #         __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-            #         perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-            #         reattacked_ts_norm = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-            #     except Exception as e:
-            #         print(f"Foolbox {self.cfg.reattack_kind.value} attack failed: {e}")
-            #         continue
-        elif self.cfg.reattack_kind == AttackKind.FGSM:
-            assert isinstance(self.cfg.reattack_params, FGSMAttackParam), "Invalid params for FGSM"
-            reattacked_ts_norm = fgsm.fgsm(attacked_ts_norm, reattack_target, self.model, self.device, self.cfg.reattack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
-        else:
-            raise ValueError(f"unsupported attack kind: {self.cfg.reattack_kind}")
-            # 再攻撃コード終了
-        reattacked_ts_norm_f: Final[NormTensor] = reattacked_ts_norm
-
-            # 再攻撃後推論
-        out_reattacked: Final[Tensor] = self.model(reattacked_ts_norm_f.tensor)
-        logits_reattacked: Final[Tensor] = self._to_logits(out_reattacked)
-        pred_reattacked: Final[Tensor] = logits_reattacked.max(1, keepdim=True)[1]
-
-            # --- 以降、評価と結果のyield ---
-        clean_data_denorm = self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor
-        attacked_data_denorm = self.cfg.dataset_norm.denormalize(attacked_ts_norm).tensor
-        reattacked_data_denorm = self.cfg.dataset_norm.denormalize(reattacked_ts_norm).tensor
-
-        l2_clean_vs_attacked = torch.linalg.norm((attacked_data_denorm - clean_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
-        l2_attacked_vs_reattacked = torch.linalg.norm((reattacked_data_denorm - attacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
-        l2_clean_vs_reattacked = torch.linalg.norm((reattacked_data_denorm - clean_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
-        return current_batch_size,target_ts,pred_clean,pred_attacked,pred_reattacked,reattacked_data_denorm,l2_clean_vs_attacked,l2_attacked_vs_reattacked,l2_clean_vs_reattacked
 
 def fraction_float(s: str) -> float:
     if "/" in s:
@@ -439,17 +406,6 @@ def parse_args() -> Config:
         reattack_params=reattack_params
     )
 
-
-@dataclass
-class ExperimentStats:
-    """実験全体の統計情報を集計するクラス"""
-    total: int = 0
-    clean_correct: int = 0
-    attack_successful: int = 0
-    reattack_successful: int = 0
-    reattack_successful_to_clean: int = 0
-    reattack_correct_to_original: int = 0
-
 def main():
     cfg = parse_args()
     # parse_args内で検証されるため、ここでの検証は不要
@@ -470,7 +426,7 @@ def main():
     output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_params_str, reattack_params_str)
     os.makedirs(output_folder, exist_ok=True)
     
-    csv_filename = os.path.join(output_folder, "0_reattack_results.csv")
+    csv_filename = os.path.join(output_folder, "reattack_results.csv")
     csv_header = [
         "index", "target_label", "pred_clean", "pred_attacked", "pred_reattacked",
         "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked", "reattacked_image_path"
@@ -483,35 +439,26 @@ def main():
         
         futures = {}
 
-        stats = ExperimentStats()
         for result_tuple in result_generator:
-            idx = result_tuple.index
-            target = result_tuple.target_label
-            pred_c = result_tuple.pred_clean
-            pred_a = result_tuple.pred_attacked
-            pred_r = result_tuple.pred_reattacked
-            l2_c_a = result_tuple.l2_clean_vs_attacked
-            l2_a_r = result_tuple.l2_attacked_vs_reattacked
-            l2_c_r = result_tuple.l2_clean_vs_reattacked
-            image_ts = result_tuple.reattacked_image_ts 
-
-            stats.total += 1
+            (idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_ts) = result_tuple
+            
+            stats['total'] += 1
 
             # 新しい指標: 再攻撃後に元の正解ラベルに一致したか
             if pred_r == target:
-                stats.reattack_correct_to_original += 1
+                stats['reattack_correct_to_original'] += 1
 
             # 既存の指標
             if pred_c == target:
-                stats.clean_correct += 1
+                stats['clean_correct'] += 1
                 if pred_a != pred_c:
-                    stats.attack_successful += 1
+                    stats['attack_successful'] += 1
                     # 再攻撃が成功し、元の予測から変わった場合 (ターゲット化された再攻撃の成功)
                     if pred_r != pred_a:
-                         stats.reattack_successful += 1
-                    # 再攻撃が成功し、正しいラベルに戻った場合
-                    if pred_r == target:
-                        stats.reattack_successful_to_clean += 1
+                         stats['reattack_successful'] += 1
+                    # 再攻撃が成功し、元のクリーンな予測に戻った場合
+                    if pred_r == pred_c:
+                        stats['reattack_successful_to_clean'] += 1
 
             image_path = ""
             if cfg.save_images:
@@ -523,8 +470,6 @@ def main():
             csv_row = [idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_path]
             writer.writerow(csv_row)
 
-
-
         # 非同期処理の完了を待ち、エラーがあれば表示
         for future in concurrent.futures.as_completed(futures):
             idx = futures[future]
@@ -534,6 +479,8 @@ def main():
                 print(f"Image saving for index {idx} generated an exception: {exc}")
 
 
+    total, clean_correct, attack_successful, reattack_successful, reattack_to_clean, reattack_correct_to_original = \
+        stats['total'], stats['clean_correct'], stats['attack_successful'], stats['reattack_successful'], stats['reattack_successful_to_clean'], stats['reattack_correct_to_original']
     
     def format_params(params: AttackParams) -> str:
         # dataclassを辞書に変換し、'batch_size'を除外
@@ -553,14 +500,14 @@ def main():
     print(f"  再攻撃: {cfg.reattack_kind.value} ({reattack_params_formatted})")
     
     print("\n[結果]")
-    print(f"  処理サンプル総数: {stats.total}")
-    print(f"  クリーン精度: {stats.clean_correct / stats.total:.4f} ({stats.clean_correct}/{stats.total})")
-    if stats.clean_correct > 0:
-        print(f"  初回攻撃成功率: {stats.attack_successful / stats.clean_correct:.4f} ({stats.attack_successful}/{stats.clean_correct})")
-        if stats.attack_successful > 0:
-            print(f"  再攻撃成功率 (攻撃後から変化): {stats.reattack_successful / stats.attack_successful:.4f} ({stats.reattack_successful}/{stats.attack_successful})")
-            print(f"  再攻撃成功率 (正しい識別に戻ったもの): {stats.reattack_successful_to_clean / stats.attack_successful:.4f} ({stats.reattack_successful_to_clean}/{stats.attack_successful})")
-    print(f"  再攻撃後正解率(クリーン識別成功，攻撃成功を考慮しない): {stats.reattack_correct_to_original / stats.total:.4f} ({stats.reattack_correct_to_original}/{stats.total})")
+    print(f"  処理サンプル総数: {total}")
+    print(f"  クリーン精度: {clean_correct / total:.4f} ({clean_correct}/{total})")
+    if clean_correct > 0:
+        print(f"  初回攻撃成功率: {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
+        if attack_successful > 0:
+            print(f"  再攻撃成功率 (攻撃後から変化): {reattack_successful / attack_successful:.4f} ({reattack_successful}/{attack_successful})")
+            print(f"  再攻撃成功率 (クリーンに戻ったもの): {reattack_to_clean / attack_successful:.4f} ({reattack_to_clean}/{attack_successful})")
+    print(f"  再攻撃後正解率(クリーン識別成功，攻撃成功を考慮しない): {reattack_correct_to_original / total:.4f} ({reattack_correct_to_original}/{total})")
     print(f"結果は {csv_filename} に保存されました。")
     print("=========================")
 
