@@ -322,23 +322,22 @@ fn execute_attack<B: Backend>(
 
 /// 前処理を適用する関数
 /// 
-/// 実装は簡易的なもの（ガウシアンブラー風の平滑化）
+/// 実装は簡易的なもの（単純な平均プーリング風の平滑化）
+/// 注：本格的な実装ではconv2dでガウシアンカーネルを適用すべきですが、
+/// ここでは概念実証として簡易的な平滑化（元画像を少し弱めるだけ）を実装しています。
 fn apply_preprocessing<B: Backend>(
     input: Tensor<Autodiff<B>, 4>,
     preprocess_type: PreprocessType,
     strength: f32,
 ) -> Tensor<Autodiff<B>, 4> {
     match preprocess_type {
-        PreprocessType::GaussianBlur | PreprocessType::Denoise => {
-            // 簡易的な平滑化：隣接ピクセルとの平均化
-            // 本来はconv2dでガウシアンカーネルを適用すべきだが、
-            // ここでは簡易的に元画像と平滑化版をブレンド
-            let smoothed = input.clone() * (1.0 - strength) + input.clone().mean_dim(0) * strength;
-            smoothed
-        }
-        PreprocessType::MedianFilter => {
-            // 中央値フィルタの完全な実装は複雑なので、ここでは平滑化で代用
-            let smoothed = input.clone() * (1.0 - strength) + input.clone().mean_dim(0) * strength;
+        PreprocessType::GaussianBlur | PreprocessType::Denoise | PreprocessType::MedianFilter => {
+            // 簡易的な平滑化：摂動を弱めることで防御効果をシミュレート
+            // 実際の実装では、適切な空間フィルタリング（conv2dなど）を使用すべきです
+            // 
+            // ここでは、元の画像の情報を少し弱める（0に近づける）ことで
+            // 敵対的摂動の影響を減らす簡易的なアプローチを採用
+            let smoothed = input.clone() * (1.0 - strength * 0.5);
             smoothed
         }
     }
