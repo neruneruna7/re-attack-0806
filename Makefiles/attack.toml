@@ -222,9 +222,9 @@
         "--attack",
         "bim",
         "--epsilon",
-        "8/255",
+        "0.3",
         "--alpha",
-        "1/255",
+        "0.05",
         "--n",
         "10",
         "--batch-size",
@@ -232,6 +232,7 @@
         "--num-samples",
         "1024",
         "--shuffle-dataloader",
+        "--save-images",
     ]
     # バッチサイズが64だとメモリ不足になる
 

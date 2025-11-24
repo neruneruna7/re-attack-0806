@@ -55,7 +55,7 @@ args = [
     "--preprocess-kernel-size", "3",
     "--preprocess-sigma", "0.5",
     "--reattack-kind", "fgsm",
-    "--reattack-eps", "8/255",
+    "--reattack-eps", "4/255",
     "--batch-size", "128",
     "--num-samples", "-1",
     "--no-save-images"
@@ -76,10 +76,54 @@ args = [
     "--preprocess-kernel-size", "3",
     "--preprocess-sigma", "0.5",
     "--reattack-kind", "bim",
-    "--reattack-eps", "8/255",
-    "--reattack-alpha", "2/255",
+    "--reattack-eps", "4/255",
+    "--reattack-alpha", "1/255",
     "--reattack-n", "10",
     "--batch-size", "128",
     "--num-samples", "-1",
     "--no-save-images"
 ]
+
+[tasks.prepross-cifar10-fgsm-gauss-bim]
+description = "CIFAR-100: FGSM attack -> Gaussian Blur -> FGSM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "cifar100",
+    "--model", "morimoto-cifar100",
+    "--attack-kind", "fgsm",
+    "--attack-eps", "8/255",
+    "--preprocess-kind", "gaussian_blur",
+    "--preprocess-kernel-size", "3",
+    "--preprocess-sigma", "0.5",
+    "--reattack-kind", "bim",
+    "--reattack-eps", "4/255",
+    "--reattack-alpha", "1/255",
+    "--reattack-n", "10",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]
+
+[tasks.prepross-cifar10-bim-gauss-fgsm]
+description = "CIFAR-10: BIM attack -> Gaussian Blur -> FGSM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "cifar10",
+    "--model", "morimoto-cifar10",
+    "--attack-kind", "bim",
+    "--attack-eps", "8/255",
+    "--attack-alpha", "2/255",
+    "--attack-n", "10",
+    "--preprocess-kind", "gaussian_blur",
+    "--preprocess-kernel-size", "3",
+    "--preprocess-sigma", "0.5",
+    "--reattack-kind", "fgsm",
+    "--reattack-eps", "4/255",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]
+
+

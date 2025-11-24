@@ -1,19 +1,3 @@
-extend = [
-    { path = "./Makefiles/train.toml"},
-    { path = "./Makefiles/attack.toml"},
-    { path = "./Makefiles/reattack.toml"},
-    { path = "./Makefiles/prepross_reattack.toml" }
-]
-
-[config]
-    skip_core_tasks=true
-
-
-# 再攻撃の強度を変えると，どのような影響があるか
-[tasks.prepross-cifar10-bim-gauss-fgsm-multi]
-description = "CIFAR-10: BIM attack -> Gaussian Blur -> fgsm re-attack (複数の eps)"
-script_runner = "@rust"
-script = """
 //! ```cargo
 //! [dependencies]
 //! ```
@@ -45,9 +29,11 @@ fn main() -> std::io::Result<()> {
         println!("実行中: eps = {} ...", eps);
 
         // ログファイルに見出し（区切り線）を書き込み
-        writeln!(file, "\n------------------------------------------------------------")?;
+        writeln!(file, "
+------------------------------------------------------------")?;
         writeln!(file, "Parameter: reattack-eps = {}", eps)?;
-        writeln!(file, "------------------------------------------------------------\n")?;
+        writeln!(file, "------------------------------------------------------------
+")?;
 
         // 4. コマンドの構築と実行
         // uv run ... の引数を設定
@@ -80,24 +66,9 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    writeln!(file, "\n=== Experiment Finished ===")?;
+    writeln!(file, "
+=== Experiment Finished ===")?;
     println!("全ての実験が完了しました。");
 
     Ok(())
 }
-"""
-
-# 再攻撃の強度を変えると，どのような影響があるか
-[tasks.prepross-cifar10-bim-gauss-bim-multi]
-description = "CIFAR-10: BIM attack -> Gaussian Blur -> BIM re-attack (複数の eps)"
-command = "rust-script"
-args = ["./Makefiles/scripts/prepross-cifar10-bim-gauss-bim-multi.rs"]
-
-[tasks.reattask-cifar10-bim-bim-multi]
-description = "CIFAR-10: BIM attack -> BIM re-attack (複数の eps)"
-command = "rust-script"
-args = ["./Makefiles/scripts/reattask-cifar10-bim-bim-multi.rs"]
-[tasks.reattask-cifar10-bim-fgsm-multi]
-description = "CIFAR-10: BIM attack -> BIM re-attack (複数の eps)"
-command = "rust-script"
-args = ["./Makefiles/scripts/reattask-cifar10-bim-fgsm-multi.rs"]
