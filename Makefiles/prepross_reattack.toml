@@ -84,6 +84,29 @@ args = [
     "--no-save-images"
 ]
 
+[tasks.prepross-cifar10-bim-lumine-bim]
+description = "CIFAR-10: BIM attack -> Gaussian Blur -> BIM re-attack"
+command = "uv"
+args = [
+    "run", "src/general_preprocess_reattack.py",
+    "--dataset", "cifar10",
+    "--model", "morimoto-cifar10",
+    "--attack-kind", "bim",
+    "--attack-eps", "8/255",
+    "--attack-alpha", "2/255",
+    "--attack-n", "10",
+    "--preprocess-kind", "pixel_reduction",
+    "--preprocess-offset", "0.1",
+    "--reattack-kind", "bim",
+    "--reattack-eps", "4/255",
+    "--reattack-alpha", "1/255",
+    "--reattack-n", "10",
+    "--batch-size", "128",
+    "--num-samples", "-1",
+    "--no-save-images"
+]
+
+
 [tasks.prepross-cifar10-fgsm-gauss-bim]
 description = "CIFAR-100: FGSM attack -> Gaussian Blur -> FGSM re-attack"
 command = "uv"

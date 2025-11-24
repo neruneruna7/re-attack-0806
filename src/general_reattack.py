@@ -72,6 +72,62 @@ class ReAttackResult:
     l2_clean_vs_reattacked: float
     reattacked_image_ts: TensorWithState # 画像データ（保存用）
 
+
+def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm: NormTensor, target_labels: Tensor, eval_model: nn.Module, device: torch.device, mean: Tensor, std: Tensor, config: Config) -> Tuple[utils.TensorWithState[bim.Normalized], Tensor]:
+    if attack_kind == AttackKind.BIM:
+        assert isinstance(attack_params, BIMAttackParam), "Invalid params for BIM"
+        params = attack_params
+        attacked_ts_norm  = bim.bim(
+                input_data_norm, target_labels, eval_model,device, params.epsilon,
+                params.alpha, params.iters, mean, std
+            )
+    elif attack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
+        mean_list = mean.squeeze().tolist()
+        std_list = std.squeeze().tolist()
+        preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
+        bounds = (0.0, 1.0)
+        fmodel = foolbox.PyTorchModel(eval_model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+        foolbox_attack = None
+        if attack_kind == AttackKind.FOOLBOX_BIM:
+            assert isinstance(attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
+            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
+        elif attack_kind == AttackKind.FOOLBOX_FGSM:
+            assert isinstance(attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
+            foolbox_attack = foolbox.attacks.FGSM()
+        else:
+            raise ValueError(f"unsupported Foolbox attack kind: {attack_kind}")
+        try:
+            raw, clipped, is_adv = foolbox_attack(fmodel, config.dataset_norm.denormalize(input_data_norm).tensor, target_labels, epsilons=attack_params.epsilon)
+            __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
+            perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
+            attacked_ts_norm = config.dataset_norm.normalize(perturbed_denorm_ts)
+        except Exception as e:
+            print(f"Foolbox {attack_kind.value} attack failed: {e}")
+
+    elif attack_kind == AttackKind.FGSM:
+        assert isinstance(attack_params, FGSMAttackParam), "Invalid params for FGSM"
+        attacked_ts_norm = fgsm.fgsm(input_data_norm, target_labels, eval_model, device, attack_params.epsilon, mean, std)
+    else:
+        raise ValueError(f"unsupported attack kind: {attack_kind}")
+        # 攻撃コード終了
+    attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
+
+        # 攻撃後推論
+    out_attacked: Final[Tensor] = eval_model(attacked_ts_norm_f.tensor)
+    logits_attacked: Final[Tensor] = _to_logits(out_attacked)
+    pred_attacked: Final[Tensor] = logits_attacked.max(1, keepdim=True)[1]
+    return attacked_ts_norm_f, pred_attacked
+
+
+@staticmethod
+def _to_logits(output: Tensor) -> Tensor:
+    if output.dim() == 4:
+        return output.mean(dim=(2, 3))
+    if output.dim() > 2:
+        return output.view(output.size(0), output.size(1), -1).mean(dim=2)
+    return output
+
+
 class Runner:
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -124,87 +180,10 @@ class Runner:
             except Exception:
                 print(f"failed to load exact state_dict from {path}, continuing with init model")
 
-    @staticmethod
-    def _to_logits(output: Tensor) -> Tensor:
-        if output.dim() == 4:
-            return output.mean(dim=(2, 3))
-        if output.dim() > 2:
-            return output.view(output.size(0), output.size(1), -1).mean(dim=2)
-        return output
-
-    # def _perform_attack(self, eval_model: torch.nn.Module, data_norm: TensorWithState, target: Tensor, kind: AttackKind, params: AttackParams) -> TensorWithState:
-    #     # このメソッドは常に正規化済みのデータを入力として受け取り、正規化済みのデータを返す
-    #     if kind == AttackKind.BIM:
-    #         assert isinstance(params, BIMAttackParam), "Invalid params for BIM"
-    #         return bim.bim(data_norm, target, eval_model, self.device, params.epsilon, params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
-        
-    #     elif kind == AttackKind.FGSM:
-    #         assert isinstance(params, FGSMAttackParam), "Invalid params for FGSM"
-    #         return fgsm.fgsm(data_norm, target, eval_model, self.device, params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)            
-    #     elif kind == AttackKind.FOOLBOX_BIM:
-    #         assert isinstance(params, BIMAttackParam), "Invalid params for FoolboxBIM"
-            
-    #         # attack_objまたはreattack_objを適切に選択
-    #         if kind == self.cfg.attack_kind:
-    #             attack_obj = self.attack_obj
-    #         elif kind == self.cfg.reattack_kind:
-    #             attack_obj = self.reattack_obj
-    #         else:
-    #             raise ValueError("Attack kind not recognized for foolbox object selection.")
-
-    #         if self.fmodel is None or attack_obj is None:
-    #             raise RuntimeError("Foolbox model or attack object is not initialized.")
-
-    #         # バグ修正: foolboxには非正規化データを渡す
-    #         data_denorm = self.cfg.dataset_norm.denormalize(data_norm)
-            
-    #         try:
-    #             _, clipped, _ = attack_obj(self.fmodel, data_denorm.tensor, target, epsilons=params.epsilon)
-                
-    #             # バグ修正: foolboxの出力(非正規化)を後続処理のため正規化する
-    #             __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-    #             perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-    #             return self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-
-    #         except Exception as e:
-    #             print(f"Foolbox BIM attack failed: {e}. Returning original data.")
-    #             return data_norm # 失敗した場合は元の正規化データを返す
-    #     elif kind == AttackKind.FOOLBOX_FGSM:
-    #         assert isinstance(params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-
-    #         # attack_objまたはreattack_objを適切に選択
-    #         if kind == self.cfg.attack_kind:
-    #             attack_obj = self.attack_obj
-    #         elif kind == self.cfg.reattack_kind:
-    #             attack_obj = self.reattack_obj
-    #         else:
-    #             raise ValueError("Attack kind not recognized for foolbox object selection.")
-
-    #         if self.fmodel is None or attack_obj is None:
-    #             raise RuntimeError("Foolbox model or attack object is not initialized.")
-
-    #         # バグ修正: foolboxには非正規化データを渡す
-    #         data_denorm = self.cfg.dataset_norm.denormalize(data_norm)
-
-    #         try:
-    #             _, clipped, _ = attack_obj(self.fmodel, data_denorm.tensor, target)
-                
-    #             # バグ修正: foolboxの出力(非正規化)を後続処理のため正規化する
-    #             __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-    #             perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-    #             return self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-
-    #         except Exception as e:
-    #             print(f"Foolbox FGSM attack failed: {e}. Returning original data.")
-    #             return data_norm # 失敗した場合は元の正規化データを返す
-
-    #     else:
-    #         raise ValueError(f"unsupported attack kind: {kind}")
-
     def run(self) -> Iterator[ReAttackResult]:
         print(f"Running Re-Attack with config: {self.cfg}")
 
-        model = self.model.eval()
+        # model = self.model.eval()
 
         global_idx = 0
         for data, target in tqdm(self.test_loader, desc="Re-Attacking"):
@@ -219,7 +198,7 @@ class Runner:
 
                 reattacked_sample_denorm_ts = TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
 
-                print(f"Index {global_idx}: Target {target_ts[j].item()}, Clean Pred {pred_clean.view(-1)[j].item()}, Attacked Pred {pred_attacked.view(-1)[j].item()}, Reattacked Pred {pred_reattacked.view(-1)[j].item()}")
+                # print(f"Index {global_idx}: Target {target_ts[j].item()}, Clean Pred {pred_clean.view(-1)[j].item()}, Attacked Pred {pred_attacked.view(-1)[j].item()}, Reattacked Pred {pred_reattacked.view(-1)[j].item()}")
 
                 yield ReAttackResult(
                 index=global_idx,
@@ -235,61 +214,34 @@ class Runner:
                 global_idx += 1
 
     def inner_loop(self, data, target):
+        eval_model = self.model.eval()
         current_batch_size = data.shape[0]
         clean_data_ts: Final[DenormTensor] = TensorWithState(data.to(self.device), DENORMALIZED)
         clean_data_ts_norm: Final[NormTensor] = self.cfg.dataset_norm.normalize(clean_data_ts)
         target_ts: Final[Tensor] = target.to(self.device).view(-1).long()
             
-            # クリーンデータ推論
-        output_clean: Final[Tensor] = self.model(clean_data_ts_norm.tensor)
-        logits_clean: Final[Tensor] = self._to_logits(output_clean)
+        # クリーンデータ推論
+        output_clean: Final[Tensor] = eval_model(clean_data_ts_norm.tensor)
+        logits_clean: Final[Tensor] = _to_logits(output_clean)
         pred_clean: Final[Tensor] = logits_clean.max(1, keepdim=True)[1]
 
             # _perform_attackは常に正規化データを返すので、データの状態管理がシンプルになる
             # attacked_data_ts_norm = self._perform_attack(clean_data_ts_norm, target_ts, self.cfg.attack_kind, self.cfg.attack_params)
             # 攻撃コード開始
-        if self.cfg.attack_kind == AttackKind.BIM:
-            assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for BIM"
-            params = self.cfg.attack_params
-            attacked_ts_norm  = bim.bim(
-                    clean_data_ts_norm, target_ts, self.model, self.device, params.epsilon,
-                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
-                )
-            # elif self.cfg.attack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-            #     mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            #     std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            #     preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            #     bounds = (0.0, 1.0)
-            #     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            #     foolbox_attack = None
-            #     if self.cfg.attack_kind == AttackKind.FOOLBOX_BIM:
-            #         assert isinstance(self.cfg.attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-            #         foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
-            #     elif self.cfg.attack_kind == AttackKind.FOOLBOX_FGSM:
-            #         assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-            #         foolbox_attack = foolbox.attacks.FGSM()
-            #     else:
-            #         raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.attack_kind}")
-            #     try:
-            #         raw, clipped, is_adv = foolbox_attack(fmodel, self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor, target_ts, epsilons=self.cfg.attack_params.epsilon)
-            #         __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-            #         perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-            #         attacked_ts_norm = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-            #     except Exception as e:
-            #         print(f"Foolbox {self.cfg.attack_kind.value} attack failed: {e}")
-            #         continue
-        elif self.cfg.attack_kind == AttackKind.FGSM:
-            assert isinstance(self.cfg.attack_params, FGSMAttackParam), "Invalid params for FGSM"
-            attacked_ts_norm = fgsm.fgsm(clean_data_ts_norm, target_ts, self.model, self.device, self.cfg.attack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
-        else:
-            raise ValueError(f"unsupported attack kind: {self.cfg.attack_kind}")
-            # 攻撃コード終了
-        attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
 
-            # 攻撃後推論
-        out_attacked: Final[Tensor] = self.model(attacked_ts_norm_f.tensor)
-        logits_attacked: Final[Tensor] = self._to_logits(out_attacked)
-        pred_attacked: Final[Tensor] = logits_attacked.max(1, keepdim=True)[1]
+        result = attack(
+            self.cfg.attack_kind,
+            self.cfg.attack_params,
+            clean_data_ts_norm,
+            target_ts,
+            eval_model,
+            self.device,
+            self.cfg.dataset_norm.mean,
+            self.cfg.dataset_norm.std,
+            self.cfg
+        )
+        attacked_ts_norm, pred_attacked = result
+        attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
 
 
         # probs = F.softmax(logits_attacked, dim=1)
@@ -297,51 +249,25 @@ class Runner:
         # # print(f"Confidence of attacked sample: {conf_max.item()}")
         # print(f"Confidence - Mean: {conf_max.mean().item():.4f}, Max: {conf_max.max().item():.4f}, Min: {conf_max.min().item():.4f}")
 
+
         reattack_target: Final[Tensor] = pred_attacked.view(-1).long()
             # reattacked_data_ts_norm = self._perform_attack(attacked_data_ts_norm, reattack_target, self.cfg.reattack_kind, self.cfg.reattack_params)
             # 再攻撃コード開始
-        if self.cfg.reattack_kind == AttackKind.BIM:
-            assert isinstance(self.cfg.reattack_params, BIMAttackParam), "Invalid params for BIM"
-            params = self.cfg.reattack_params
-            reattacked_ts_norm = bim.bim(
-                    attacked_ts_norm_f, reattack_target, self.model, self.device, params.epsilon,
-                    params.alpha, params.iters, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
-                )
-            # elif self.cfg.reattack_kind in [AttackKind.FOOLBOX_BIM, AttackKind.FOOLBOX_FGSM]:
-            #     mean_list = self.cfg.dataset_norm.mean.squeeze().tolist()
-            #     std_list = self.cfg.dataset_norm.std.squeeze().tolist()
-            #     preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
-            #     bounds = (0.0, 1.0)
-            #     fmodel = foolbox.PyTorchModel(self.model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
-            #     foolbox_attack = None
-            #     if self.cfg.reattack_kind == AttackKind.FOOLBOX_BIM:
-            #         assert isinstance(self.cfg.reattack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-            #         foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.reattack_params.iters, abs_stepsize=self.cfg.reattack_params.alpha) # type: ignore[reportPrivateImportUsage]
-            #     elif self.cfg.reattack_kind == AttackKind.FOOLBOX_FGSM:
-            #         assert isinstance(self.cfg.reattack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
-            #         foolbox_attack = foolbox.attacks.FGSM()
-            #     else:
-            #         raise ValueError(f"unsupported Foolbox attack kind: {self.cfg.reattack_kind}")
-            #     try:
-            #         raw, clipped, is_adv = foolbox_attack(fmodel,  self.cfg.dataset_norm.denormalize(attacked_ts_norm).tensor, reattack_target, epsilons=self.cfg.reattack_params.epsilon)
-            #         __perturbed_denorm = clipped if not isinstance(clipped, (list, tuple)) else clipped[0]
-            #         perturbed_denorm_ts = TensorWithState(__perturbed_denorm, DENORMALIZED)
-            #         reattacked_ts_norm = self.cfg.dataset_norm.normalize(perturbed_denorm_ts)
-            #     except Exception as e:
-            #         print(f"Foolbox {self.cfg.reattack_kind.value} attack failed: {e}")
-            #         continue
-        elif self.cfg.reattack_kind == AttackKind.FGSM:
-            assert isinstance(self.cfg.reattack_params, FGSMAttackParam), "Invalid params for FGSM"
-            reattacked_ts_norm = fgsm.fgsm(attacked_ts_norm, reattack_target, self.model, self.device, self.cfg.reattack_params.epsilon, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std)
-        else:
-            raise ValueError(f"unsupported attack kind: {self.cfg.reattack_kind}")
-            # 再攻撃コード終了
-        reattacked_ts_norm_f: Final[NormTensor] = reattacked_ts_norm
 
-            # 再攻撃後推論
-        out_reattacked: Final[Tensor] = self.model(reattacked_ts_norm_f.tensor)
-        logits_reattacked: Final[Tensor] = self._to_logits(out_reattacked)
-        pred_reattacked: Final[Tensor] = logits_reattacked.max(1, keepdim=True)[1]
+        result_reattack = attack(
+            self.cfg.reattack_kind,
+            self.cfg.reattack_params,
+            attacked_ts_norm_f,
+            reattack_target,
+            eval_model,
+            self.device,
+            self.cfg.dataset_norm.mean,
+            self.cfg.dataset_norm.std,
+            self.cfg
+        )
+        reattacked_ts_norm, pred_reattacked = result_reattack
+        reattacked_ts_norm_f: Final[NormTensor] = reattacked_ts_norm
+            
 
             # --- 以降、評価と結果のyield ---
         clean_data_denorm = self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor

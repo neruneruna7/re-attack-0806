@@ -21,6 +21,7 @@ from re_attack_0806.utils.config import (
     AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm,
     FGSMAttackParam, BIMAttackParam, AttackParams,
     PreprocessingKind, GaussianBlurParams, MedianBlurParams, PreprocessingParams
+    , PixelReductionParams
 )
 from re_attack_0806.utils.normTensor import *
 
@@ -149,6 +150,29 @@ class Runner:
                  TF.to_tensor(TF.to_pil_image(img).filter(ImageFilter.MedianFilter(size=params.kernel_size)))
                  for img in data_denorm.tensor.cpu()
             ]).to(self.device)
+        elif kind == PreprocessingKind.PIXEL_REDUCTION:
+            # 画素値を一定量減算する前処理
+            # 指定がなければデフォルトで 0.1 を引く（値域を [0,1] と仮定し、clamp する）
+            assert isinstance(params, PixelReductionParams), "Invalid params for Pixel Reduction"
+            # 互換性のため、params に offset 属性がなければエラーにする
+            if not hasattr(params, 'offset'):
+                raise ValueError("PixelReductionParams must have an 'offset' attribute")
+            amount = params.offset
+            # data_denorm.tensor は (B, C, H, W)、値域はデノーマイズ済み（通常 [0,1]）
+            # 正規化した状態で引く．そしてclampする
+            _normed_tensor = self.cfg.dataset_norm.normalize(data_denorm)
+
+            processed_norm_tensor = _normed_tensor.tensor - amount
+
+            min_val_norm = (0 - self.cfg.dataset_norm.mean) / self.cfg.dataset_norm.std
+            max_val_norm = (1 - self.cfg.dataset_norm.mean) / self.cfg.dataset_norm.std
+
+
+            clamped_norm_tensor = processed_norm_tensor.clamp(min_val_norm, max_val_norm)
+
+            processed_denorm_tensor = self.cfg.dataset_norm.denormalize(TensorWithState(clamped_norm_tensor, NORMALIZED)).tensor
+
+            # processed_denorm_tensor = (data_denorm.tensor.float() - float(amount)).clamp(0.0, 1.0)
         else:
             raise NotImplementedError(f"Preprocessing kind {kind} is not implemented.")
 
@@ -272,6 +296,8 @@ def parse_args() -> Config:
     # 前処理パラメータ
     parser.add_argument("--preprocess-kernel-size", type=int)
     parser.add_argument("--preprocess-sigma", type=float)
+    parser.add_argument("--preprocess-offset", type=float,
+                        help="Amount to subtract from each pixel for brightness reduction (default 0.1)")
 
     # 再攻撃パラメータ
     parser.add_argument("--reattack-eps", type=fraction_float)
@@ -302,6 +328,10 @@ def parse_args() -> Config:
         if args.preprocess_kernel_size is None:
             parser.error("Median Blur requires --preprocess-kernel-size.")
         preprocess_params = MedianBlurParams(kernel_size=args.preprocess_kernel_size)
+    elif preprocess_kind == PreprocessingKind.PIXEL_REDUCTION:
+        # オフセットが指定されていなければデフォルトを使用（0.1）
+        offset = args.preprocess_offset if args.preprocess_offset is not None else 0.1
+        preprocess_params = PixelReductionParams(offset=offset)
 
     dataset = DatasetKind(args.dataset)
     device = utils.get_device()

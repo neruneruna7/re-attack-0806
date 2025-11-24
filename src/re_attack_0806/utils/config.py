@@ -192,6 +192,8 @@ class PreprocessingKind(str, Enum):
     NONE = "none"
     GAUSSIAN_BLUR = "gaussian_blur"
     MEDIAN_BLUR = "median_blur"
+    # 画素値の階調（ビット深度）を減らす前処理
+    PIXEL_REDUCTION = "pixel_reduction"
     # 今後、JPEG圧縮などを追加可能
     # JPEG_COMPRESSION = "jpeg_compression"
 
@@ -206,5 +208,15 @@ class MedianBlurParams:
     """メディアンブラーのパラメータ。"""
     kernel_size: int
 
+
+@dataclass
+class PixelReductionParams:
+        """画素の輝度を減らす前処理のパラメータ。
+
+        - offset: 各ピクセルから減算する値（デノーマライズ済みの値域を [0,1] と仮定）。
+            例: 0.1 は各画素から 0.1 を引き、0..1 に clamp します。
+        """
+        offset: float = 0.1
+
 # 前処理パラメータの Union 型
-PreprocessingParams = Union[GaussianBlurParams, MedianBlurParams, None]
+PreprocessingParams = Union[GaussianBlurParams, MedianBlurParams, PixelReductionParams, None]
