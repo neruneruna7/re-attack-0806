@@ -24,7 +24,7 @@ def main():
     
     # 【重要】論文には明記がないが、Adam(lr=0.01)でのロジット爆発と過学習を防ぐために設定
     # これがないと前回のようにConfidenceが1.0に張り付き、正常な追試ができません。
-    # WEIGHT_DECAY = 1e-4
+    WEIGHT_DECAY = 1e-4
 
     # データセットの準備 (CIFAR-10)
     stats = ((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
@@ -56,7 +56,7 @@ def main():
 
     # Optimizer設定 (論文条件: Adam)
     # 安定学習のためにWeight Decayを追加
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     
     # 学習率スケジューラ (オプション: 論文にはないが収束を安定させるため推奨)
     # 論文通りの固定LRで行く場合はscheduler.step()を削除してください
