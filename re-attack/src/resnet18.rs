@@ -1,12 +1,12 @@
 use burn::{
     nn::{
-        Gelu, GroupNorm, GroupNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
         conv::{Conv2d, Conv2dConfig},
         loss::CrossEntropyLossConfig,
         pool::{AdaptiveAvgPool2d, AdaptiveAvgPool2dConfig, MaxPool2d, MaxPool2dConfig},
+        Gelu, GroupNorm, GroupNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu,
     },
     prelude::*,
-    tensor::{BasicAutodiffOps, backend::AutodiffBackend},
+    tensor::{backend::AutodiffBackend, BasicAutodiffOps},
     train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep},
 };
 use tracing::{info, instrument};
@@ -58,14 +58,8 @@ impl<B: Backend> ResNet18<B> {
 
     pub fn forward_classification(&self, batch: MnistBatch<B>) -> ClassificationOutput<B> {
         let targets = batch.targets;
-        let [batch_size, height, width] = batch.images.dims();
-        // チャネル数1を加えて，4次元に変換
-        let image = batch
-            .images
-            .reshape([batch_size, 1, height, width])
-            .detach();
 
-        let output = self.forward(image);
+        let output = self.forward(batch.images);
         let loss = CrossEntropyLossConfig::new()
             .init(&output.device())
             .forward(output.clone(), targets.clone());

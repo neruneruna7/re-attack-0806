@@ -1,7 +1,7 @@
 use crate::{
-    ARTIFACT_DIR,
     data::MnistBacher,
     resnet18::{ResNet18, ResNet18Config},
+    ARTIFACT_DIR,
 };
 
 use burn::{
@@ -9,16 +9,16 @@ use burn::{
         dataloader::{self, DataLoaderBuilder},
         dataset::vision::MnistDataset,
     },
-    optim::{AdamConfig, decay::WeightDecayConfig},
+    optim::{decay::WeightDecayConfig, AdamConfig},
     prelude::*,
     record::{CompactRecorder, NoStdTrainingRecorder},
     tensor::backend::AutodiffBackend,
     train::{
-        LearnerBuilder, MetricEarlyStoppingStrategy, StoppingCondition,
         metric::{
-            AccuracyMetric, CpuMemory, CpuTemperature, CpuUse, LossMetric,
             store::{Aggregate, Direction, Split},
+            AccuracyMetric, CpuMemory, CpuTemperature, CpuUse, LossMetric,
         },
+        LearnerBuilder, MetricEarlyStoppingStrategy, StoppingCondition,
     },
 };
 
@@ -66,7 +66,12 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
         .shuffle(config.seed)
         .num_workers(config.num_workers)
         .build(MnistDataset::train());
-    let dataloader_test = DataLoaderBuilder::new(batcher)
+    let dataloader_test: std::sync::Arc<
+        dyn DataLoader<
+            <B as AutodiffBackend>::InnerBackend,
+            crate::data::MnistBatch<<B as AutodiffBackend>::InnerBackend>,
+        >,
+    > = DataLoaderBuilder::new(batcher)
         .batch_size(config.batch_size)
         .shuffle(config.seed)
         .num_workers(config.num_workers)

@@ -72,7 +72,7 @@ pub struct AttackArgs {
     pub epsilon: f32,
 
     /// Alpha: 各イテレーションでの更新ステップサイズ (BIMのみ)
-    #[arg(long, default_value = "0.01")]
+    #[arg(long, default_value = "0.05")]
     pub alpha: f32,
 
     /// イテレーション回数 (BIMのみ)

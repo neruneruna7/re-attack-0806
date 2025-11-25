@@ -7,6 +7,7 @@ pub mod data;
 // pub mod grad;
 pub mod infer;
 // pub mod ploof;
+// pub mod mnist;
 pub mod resnet18;
 pub mod simple_mlp;
 pub mod train;

@@ -1,5 +1,4 @@
 /// FGSM (Fast Gradient Sign Method) 攻撃の実装
-
 use super::{AdversarialAttack, AttackParams, ClassificationModel};
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::prelude::*;
@@ -65,7 +64,7 @@ impl AdversarialAttack for FgsmAttack {
         let loss = loss_fn.forward(output, target);
 
         let loss_val = loss.clone().into_scalar();
-        info!("FGSM Loss = {:.4}", loss_val);
+        // info!("FGSM Loss = {:.4}", loss_val);
 
         // 3. Backward
         let grads = loss.backward();
@@ -79,9 +78,7 @@ impl AdversarialAttack for FgsmAttack {
         let perturbed = orig_norm.add(perturbation);
 
         // 6. Domain Constraint (Pixel Value Clip)
-        let result = perturbed
-            .max_pair(min_val_norm)
-            .min_pair(max_val_norm);
+        let result = perturbed.max_pair(min_val_norm).min_pair(max_val_norm);
 
         result
     }

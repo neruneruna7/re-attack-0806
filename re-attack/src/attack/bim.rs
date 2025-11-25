@@ -1,5 +1,4 @@
 /// BIM (Basic Iterative Method) 攻撃の実装
-
 use super::{AdversarialAttack, AttackParams, ClassificationModel};
 use burn::nn::loss::CrossEntropyLossConfig;
 use burn::prelude::*;
@@ -71,7 +70,7 @@ impl AdversarialAttack for BimAttack {
             let loss = loss_fn.forward(output, target.clone());
 
             let loss_val = loss.clone().into_scalar();
-            info!("BIM Iter {}: Loss = {:.4}", i, loss_val);
+            // info!("BIM Iter {}: Loss = {:.4}", i, loss_val);
 
             // 3. Backward
             let grads = loss.backward();
@@ -87,9 +86,7 @@ impl AdversarialAttack for BimAttack {
             // 6. Projection (Epsilon Ball Clip)
             let delta = perturbed_temp.sub(orig_norm.clone());
             let neg_eps_norm = eps_norm.clone().mul_scalar(-1.0);
-            let delta_clipped = delta
-                .max_pair(neg_eps_norm)
-                .min_pair(eps_norm.clone());
+            let delta_clipped = delta.max_pair(neg_eps_norm).min_pair(eps_norm.clone());
 
             let candidate = orig_norm.clone().add(delta_clipped);
 
