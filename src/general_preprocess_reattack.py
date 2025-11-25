@@ -19,7 +19,7 @@ from re_attack_0806 import attacks, utils
 from re_attack_0806.attacks import bim, fgsm
 from re_attack_0806.utils.config import (
     AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm,
-    FGSMAttackParam, BIMAttackParam, AttackParams,
+    FGSMAttackParam, BIMAttackParam, AttackParams, MyPreprocess1Params,
     PreprocessingKind, GaussianBlurParams, MedianBlurParams, PreprocessingParams
     , PixelReductionParams
 )
@@ -173,6 +173,23 @@ class Runner:
             processed_denorm_tensor = self.cfg.dataset_norm.denormalize(TensorWithState(clamped_norm_tensor, NORMALIZED)).tensor
 
             # processed_denorm_tensor = (data_denorm.tensor.float() - float(amount)).clamp(0.0, 1.0)
+        elif kind == PreprocessingKind.MY_PREPROCESS1:
+            # 独自前処理1: 画素値を一定量減算し、さらに0.5で乗算する前処理
+            assert isinstance(params, MyPreprocess1Params), "Invalid params for MyPreprocess1"
+            if not hasattr(params, 'offset'):
+                raise ValueError("MyPreprocess1Params must have an 'offset' attribute")
+            amount = params.offset
+
+            _normed_tensor = self.cfg.dataset_norm.normalize(data_denorm)
+
+            processed_norm_tensor = (_normed_tensor.tensor / 2.0) + amount
+
+            min_val_norm = (0 - self.cfg.dataset_norm.mean) / self.cfg.dataset_norm.std
+            max_val_norm = (1 - self.cfg.dataset_norm.mean) / self.cfg.dataset_norm.std
+
+            clamped_norm_tensor = processed_norm_tensor.clamp(min_val_norm, max_val_norm)
+
+            processed_denorm_tensor = self.cfg.dataset_norm.denormalize(TensorWithState(clamped_norm_tensor, NORMALIZED)).tensor
         else:
             raise NotImplementedError(f"Preprocessing kind {kind} is not implemented.")
 
@@ -332,6 +349,9 @@ def parse_args() -> Config:
         # オフセットが指定されていなければデフォルトを使用（0.1）
         offset = args.preprocess_offset if args.preprocess_offset is not None else 0.1
         preprocess_params = PixelReductionParams(offset=offset)
+    elif preprocess_kind == PreprocessingKind.MY_PREPROCESS1:
+        offset = args.preprocess_offset if args.preprocess_offset is not None else 0.1
+        preprocess_params = MyPreprocess1Params(offset=offset)
 
     dataset = DatasetKind(args.dataset)
     device = utils.get_device()
