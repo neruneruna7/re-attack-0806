@@ -10,13 +10,12 @@ import matplotlib.pyplot as plt
 import os
 from PIL import Image
 from torch import Tensor
-import lib
 
 import foolbox
 
 
-from lib.models import MorimotoMnist, MorimotoCifar10, Ploof
-from lib import attacks, utils
+from re_attack_0806.models import MorimotoMnist, MorimotoCifar10, Ploof
+from re_attack_0806 import attacks, utils
 
 
 def main():
@@ -37,6 +36,7 @@ def main():
     test_loader = test_loader_MNIST
 
     model = MorimotoMnist.MnistNet().to(device)
+
     # model = MorimotoCifar10.Cifar10Net().to(device)
     # model = Ploof.PloofNet(10).to(device)
 

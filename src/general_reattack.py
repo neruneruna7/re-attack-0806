@@ -115,14 +115,72 @@ def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm
         # 攻撃後推論
     out_attacked: Final[Tensor] = eval_model(attacked_ts_norm_f.tensor)
     logits_attacked: Final[Tensor] = _to_logits(out_attacked)
+
+    probs = F.softmax(logits_attacked, dim=1)
+    conf_max = probs.max(1)[0]
+    # ロジットの最大値、最小値、平均値を表示
+    # 入力テンソルの範囲を確認
+    print(f"Input Tensor Stats - Max: {input_data_norm.tensor.max().item():.4f}, Min: {input_data_norm.tensor.min().item():.4f}")
+    print(f"Attacked Tensor Stats - Max: {attacked_ts_norm_f.tensor.max().item():.4f}, Min: {attacked_ts_norm_f.tensor.min().item():.4f}")
+    print(f"Logits Raw Stats - Max: {logits_attacked.max().item():.4f}, Min: {logits_attacked.min().item():.4f}, Mean: {logits_attacked.mean().item():.4f}")
+    print(f"Logits Shape: {logits_attacked.shape}")
+    print(f"Confidence - Mean: {conf_max.mean().item():.4f}, Max: {conf_max.max().item():.4f}, Min: {conf_max.min().item():.4f}")
+
+    try:
+        # 最後のレイヤーを取得（モデル構造に合わせて調整してください）
+        last_layer = list(eval_model.modules())[-1] 
+        
+        if hasattr(last_layer, 'weight'):
+            weights = last_layer.weight.data
+            print(f"Last Layer Weights - Max: {weights.max().item():.4f}, Mean: {weights.mean().item():.4f}, Std: {weights.std().item():.4f}")
+        else:
+            print("最後のレイヤーにweight属性がありません。")
+    except Exception as e:
+        print(f"重みの確認中にエラー: {e}")
+    # フックを使って最終層への入力とバイアスを確認する
+    def inspect_final_layer(module, input, output):
+        # inputはタプルなので最初の要素を取得
+        features = input[0]
+        print("--- Final Layer Inspection ---")
+        print(f"Features (Input to FC) - Max: {features.max().item():.4f}, Mean: {features.mean().item():.4f}")
+        
+        if module.bias is not None:
+            print(f"Bias Values - Max: {module.bias.max().item():.4f}, Mean: {module.bias.mean().item():.4f}")
+        else:
+            print("Bias: None")
+        print("------------------------------")
+
+    # 最終層（fcやclassifierなど）にフックを登録
+    # モデルの構造に合わせて layer_name を調整してください
+    # ResNetなどは 'fc', VGGなどは 'classifier' のことが多いです
+    target_layer = None
+    for name, module in eval_model.named_modules():
+        # 最後の線形層を自動で見つける簡易ロジック
+        if isinstance(module, torch.nn.Linear):
+            target_layer = module
+            # 最後の層を取得したいのでループを回し続ける（上書きしていく）
+
+    if target_layer is not None:
+        handle = target_layer.register_forward_hook(inspect_final_layer)
+        
+        # 一度推論を走らせる（これでフックが呼ばれます）
+        _ = eval_model(attacked_ts_norm_f.tensor)
+        
+        handle.remove() # フック解除
+    else:
+        print("Linear Layerが見つかりませんでした。")
+
+
     pred_attacked: Final[Tensor] = logits_attacked.max(1, keepdim=True)[1]
     return attacked_ts_norm_f, pred_attacked
 
 
 @staticmethod
 def _to_logits(output: Tensor) -> Tensor:
+    # print(f"Output Tensor Shape: {output.shape}, Dim: {output.dim()}")
     if output.dim() == 4:
         return output.mean(dim=(2, 3))
+    # 次元は2がやってきていることを確認した．
     if output.dim() > 2:
         return output.view(output.size(0), output.size(1), -1).mean(dim=2)
     return output
@@ -201,16 +259,16 @@ class Runner:
                 # print(f"Index {global_idx}: Target {target_ts[j].item()}, Clean Pred {pred_clean.view(-1)[j].item()}, Attacked Pred {pred_attacked.view(-1)[j].item()}, Reattacked Pred {pred_reattacked.view(-1)[j].item()}")
 
                 yield ReAttackResult(
-                index=global_idx,
-                target_label=target_ts[j].item().as_integer_ratio()[0],
-                pred_clean=pred_clean.view(-1)[j].item().as_integer_ratio()[0],
-                pred_attacked=pred_attacked.view(-1)[j].item().as_integer_ratio()[0],
-                pred_reattacked=pred_reattacked.view(-1)[j].item().as_integer_ratio()[0],
-                l2_clean_vs_attacked=l2_clean_vs_attacked[j].item(),
-                l2_attacked_vs_reattacked=l2_attacked_vs_reattacked[j].item(),
-                l2_clean_vs_reattacked=l2_clean_vs_reattacked[j].item(),
-                reattacked_image_ts=reattacked_sample_denorm_ts
-            )
+                    index=global_idx,
+                    target_label=target_ts[j].item().as_integer_ratio()[0],
+                    pred_clean=pred_clean.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_attacked=pred_attacked.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_reattacked=pred_reattacked.view(-1)[j].item().as_integer_ratio()[0],
+                    l2_clean_vs_attacked=l2_clean_vs_attacked[j].item(),
+                    l2_attacked_vs_reattacked=l2_attacked_vs_reattacked[j].item(),
+                    l2_clean_vs_reattacked=l2_clean_vs_reattacked[j].item(),
+                    reattacked_image_ts=reattacked_sample_denorm_ts
+                )
                 global_idx += 1
 
     def inner_loop(self, data, target):
@@ -222,8 +280,15 @@ class Runner:
             
         # クリーンデータ推論
         output_clean: Final[Tensor] = eval_model(clean_data_ts_norm.tensor)
-        logits_clean: Final[Tensor] = _to_logits(output_clean)
-        pred_clean: Final[Tensor] = logits_clean.max(1, keepdim=True)[1]
+        # logits_clean: Final[Tensor] = _to_logits(output_clean)
+        # pred_clean: Final[Tensor] = logits_clean.max(1, keepdim=True)[1]
+        # print(f"clean Logits Raw Stats - Max: {logits_clean.max().item():.4f}, Min: {logits_clean.min().item():.4f}, Mean: {logits_clean.mean().item():.4f}")
+        # print(f"clean Logits Shape: {logits_clean.shape}")
+        pred_clean: Final[Tensor] = output_clean.max(1, keepdim=True)[1]
+        print(f"clean Logits Raw Stats - Max: {output_clean.max().item():.4f}, Min: {output_clean.min().item():.4f}, Mean: {output_clean.mean().item():.4f}")
+        print(f"clean Logits Shape: {output_clean.shape}")
+        
+
 
             # _perform_attackは常に正規化データを返すので、データの状態管理がシンプルになる
             # attacked_data_ts_norm = self._perform_attack(clean_data_ts_norm, target_ts, self.cfg.attack_kind, self.cfg.attack_params)
@@ -244,10 +309,6 @@ class Runner:
         attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
 
 
-        # probs = F.softmax(logits_attacked, dim=1)
-        # conf_max = probs.max(1)[0]
-        # # print(f"Confidence of attacked sample: {conf_max.item()}")
-        # print(f"Confidence - Mean: {conf_max.mean().item():.4f}, Max: {conf_max.max().item():.4f}, Min: {conf_max.min().item():.4f}")
 
 
         reattack_target: Final[Tensor] = pred_attacked.view(-1).long()
