@@ -1,0 +1,11 @@
+=== Experiment Start ===
+
+------------------------------------------------------------
+Parameter: reattack-eps = 2/255
+------------------------------------------------------------
+
+5. 実行デバイスを自動判別します...
+ハードウェアアクセラレータ: GPU (MPS) を使用します。
+loaded weights from ./weight/morimoto_cifar10.pth
+Running Preprocess & Re-Attack with config: Config(dataset=<DatasetKind.CIFAR10: 'cifar10'>, model=<ModelKind.MORIMOTO_CIFAR10: 'morimoto-cifar10'>, attack_kind=<AttackKind.BIM: 'bim'>, attack_params=BIMAttackParam(epsilon=0.03137254901960784, alpha=0.00392156862745098, iters=10, batch_size=128), preprocessing_kind=<PreprocessingKind.GAUSSIAN_BLUR: 'gaussian_blur'>, preprocessing_params=GaussianBlurParams(kernel_size=3, sigma=0.5), reattack_kind=<AttackKind.BIM: 'bim'>, reattack_params=BIMAttackParam(epsilon=0.00784313725490196, alpha=0.00392156862745098, iters=10, batch_size=128), model_dir='./weight', batch_size=128, output_dir='preprocessed_reattacked_data', num_samples=-1, save_images=False, shuffle_dataloader=False, device=device(type='mps'), dataset_norm=<re_attack_0806.utils.config.DatasetNorm object at 0x10f0b6d90>)
+Preprocess & Re-Attack:   0%|          | 0/79 [00:00<?, ?it/s]Preprocess & Re-Attack:   1%|▏         | 1/79 [00:00<00:57,  1.35it/s]Preprocess & Re-Attack:   3%|▎         | 2/79 [00:01<00:46,  1.67it/s]Preprocess & Re-Attack:   4%|▍         | 3/79 [00:01<00:41,  1.81it/s]Preprocess & Re-Attack:   5%|▌         | 4/79 [00:02<00:39,  1.89it/s]Preprocess & Re-Attack:   6%|▋         | 5/79 [00:02<00:38,  1.90it/s]Preprocess & Re-Attack:   8%|▊         | 6/79 [00:03<00:37,  1.93it/s]Preprocess & Re-Attack:   9%|▉         | 7/79 [00:03<00:36,  1.96it/s]Preprocess & Re-Attack:  10%|█         | 8/79 [00:04<00:35,  1.99it/s]Preprocess & Re-Attack:  11%|█▏        | 9/79 [00:04<00:35,  2.00it/s]Preprocess & Re-Attack:  13%|█▎        | 10/79 [00:05<00:34,  2.00it/s]Preprocess & Re-Attack:  14%|█▍        | 11/79 [00:05<00:34,  2.00it/s]Preprocess & Re-Attack:  15%|█▌        | 12/79 [00:06<00:33,  2.01it/s]Preprocess & Re-Attack:  16%|█▋        | 13/79 [00:06<00:33,  1.99it/s]

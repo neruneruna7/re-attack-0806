@@ -1,0 +1,24 @@
+=== Experiment Start ===
+
+------------------------------------------------------------
+Parameter: reattack-eps = 2/255
+------------------------------------------------------------
+
+5. 実行デバイスを自動判別します...
+ハードウェアアクセラレータ: GPU (MPS) を使用します。
+loaded weights from ./weight/morimoto_cifar10.pth
+Running Preprocess & Re-Attack with config: Config(dataset=<DatasetKind.CIFAR10: 'cifar10'>, model=<ModelKind.MORIMOTO_CIFAR10: 'morimoto-cifar10'>, attack_kind=<AttackKind.BIM: 'bim'>, attack_params=BIMAttackParam(epsilon=0.03137254901960784, alpha=0.00392156862745098, iters=10, batch_size=128), preprocessing_kind=<PreprocessingKind.MY_PREPROCESS1: 'my_preprocess1'>, preprocessing_params=MyPreprocess1Params(offset=0.5), reattack_kind=<AttackKind.BIM: 'bim'>, reattack_params=BIMAttackParam(epsilon=0.00784313725490196, alpha=0.00392156862745098, iters=10, batch_size=128), model_dir='./weight', batch_size=128, output_dir='preprocessed_reattacked_data', num_samples=-1, save_images=False, shuffle_dataloader=False, device=device(type='mps'), dataset_norm=<re_attack_0806.utils.config.DatasetNorm object at 0x1132d1690>)
+Preprocess & Re-Attack:   0%|          | 0/79 [00:00<?, ?it/s]Preprocess & Re-Attack:   0%|          | 0/79 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/Users/kino/workspace/univ/lab/re-attack-0806/src/general_reattack_preprocess.py", line 477, in <module>
+    main()
+  File "/Users/kino/workspace/univ/lab/re-attack-0806/src/general_reattack_preprocess.py", line 403, in main
+    for result_tuple in result_generator:
+  File "/Users/kino/workspace/univ/lab/re-attack-0806/src/general_reattack_preprocess.py", line 237, in run
+    clean_data_ts_norm = self.cfg.dataset_norm.normalize(clean_data_ts)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/kino/workspace/univ/lab/re-attack-0806/src/re_attack_0806/utils/config.py", line 115, in normalize
+    return TensorWithState(tensor, NORMALIZED)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in __init__
+KeyboardInterrupt

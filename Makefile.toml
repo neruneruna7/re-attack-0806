@@ -112,3 +112,25 @@ description = "CIFAR-10: BIM attack -> BIM re-attack (複数の eps)"
 command = "rust-script"
 args = ["./Makefiles/scripts/reattask-cifar10-bim-fgsm-multi.rs"]
 
+
+[tasks.prepross-cifar10-bim-bim-gauss-multi]
+description = "CIFAR-10: BIM attack -> Gaussian Blur -> BIM re-attack (複数の eps)"
+command = "rust-script"
+args = ["./Makefiles/scripts/prepross-cifar10-bim-bim-gauss-multi.rs"]
+
+[tasks.prepross-cifar10-bim-bim-lumine-multi]
+description = "CIFAR-10: BIM attack -> Lumine -> BIM re-attack (複数の eps)"
+command = "rust-script"
+args = ["./Makefiles/scripts/prepross-cifar10-bim-bim-lumine-multi.rs"]
+
+[tasks.prepross-cifar10-bim-bim-my1-multi]
+description = "CIFAR-10: BIM attack -> MyPreprocess1 -> BIM re-attack (複数の eps)"
+command = "rust-script"
+args = ["./Makefiles/scripts/prepross-cifar10-bim-bim-my1-multi.rs"]
+
+[tasks.multi-multi]
+run_task = [
+    {name= "prepross-cifar10-bim-bim-gauss-multi" },
+    {name= "prepross-cifar10-bim-bim-lumine-multi" },
+    {name= "prepross-cifar10-bim-bim-my1-multi" },
+]
