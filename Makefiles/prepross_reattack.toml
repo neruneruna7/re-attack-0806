@@ -81,7 +81,7 @@ args = [
     "--reattack-n", "10",
     "--batch-size", "128",
     "--num-samples", "-1",
-    "--no-save-images"
+    "--save-images"
 ]
 
 [tasks.prepross-cifar10-bim-lumine-bim]
@@ -103,7 +103,7 @@ args = [
     "--reattack-n", "10",
     "--batch-size", "128",
     "--num-samples", "-1",
-    "--no-save-images"
+    "--save-images"
 ]
 
 

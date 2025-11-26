@@ -21,7 +21,7 @@ from re_attack_0806.utils.config import (
     AttackKind, DataFactory, DatasetKind, ModelFactory, ModelKind, DatasetNorm,
     FGSMAttackParam, BIMAttackParam, AttackParams, MyPreprocess1Params,
     PreprocessingKind, GaussianBlurParams, MedianBlurParams, PreprocessingParams
-    , PixelReductionParams
+    , PixelReductionParams, LaplacianSharpenParams
 )
 from re_attack_0806.utils.normTensor import *
 
@@ -160,19 +160,34 @@ class Runner:
             amount = params.offset
             # data_denorm.tensor は (B, C, H, W)、値域はデノーマイズ済み（通常 [0,1]）
             # 正規化した状態で引く．そしてclampする
-            _normed_tensor = self.cfg.dataset_norm.normalize(data_denorm)
 
-            processed_norm_tensor = _normed_tensor.tensor - amount
+            processed_denorm_tensor = data_denorm.tensor - float(amount)
 
-            min_val_norm = (0 - self.cfg.dataset_norm.mean) / self.cfg.dataset_norm.std
-            max_val_norm = (1 - self.cfg.dataset_norm.mean) / self.cfg.dataset_norm.std
+            clamped_denorm_tensor = processed_denorm_tensor.clamp(0.0, 1.0)
 
-
-            clamped_norm_tensor = processed_norm_tensor.clamp(min_val_norm, max_val_norm)
-
-            processed_denorm_tensor = self.cfg.dataset_norm.denormalize(TensorWithState(clamped_norm_tensor, NORMALIZED)).tensor
-
+            processed_denorm_tensor = clamped_denorm_tensor
             # processed_denorm_tensor = (data_denorm.tensor.float() - float(amount)).clamp(0.0, 1.0)
+        elif kind == PreprocessingKind.LAPLACIAN_SHARPEN:
+            # ラプラシアンでエッジを抽出して元画像に加えることでシャープ化する
+            assert isinstance(params, LaplacianSharpenParams), "Invalid params for Laplacian Sharpen"
+            alpha = float(params.alpha)
+
+            # data_denorm.tensor は (B, C, H, W) で値域 [0,1]
+            x = data_denorm.tensor
+            B, C, H, W = x.shape
+
+            # ラプラシアンカーネル (3x3)
+            lap_kernel = torch.tensor([[0.0, -1.0, 0.0],
+                                       [-1.0, 4.0, -1.0],
+                                       [0.0, -1.0, 0.0]], device=self.device, dtype=x.dtype)
+            # (C,1,3,3) に展開して depthwise conv を行う
+            weight = lap_kernel.view(1, 1, 3, 3).repeat(C, 1, 1, 1)
+
+            # depthwise convolution: groups=C
+            lap = F.conv2d(x, weight, padding=1, groups=C)
+
+            processed_denorm_tensor = (x + alpha * lap).clamp(0.0, 1.0)
+            processed_denorm_tensor = self.cfg.dataset_norm.denormalize(TensorWithState(processed_denorm_tensor, NORMALIZED)).tensor
         elif kind == PreprocessingKind.MY_PREPROCESS1:
             # 独自前処理1: 画素値を一定量減算し、さらに0.5で乗算する前処理
             assert isinstance(params, MyPreprocess1Params), "Invalid params for MyPreprocess1"
@@ -315,6 +330,8 @@ def parse_args() -> Config:
     parser.add_argument("--preprocess-sigma", type=float)
     parser.add_argument("--preprocess-offset", type=float,
                         help="Amount to subtract from each pixel for brightness reduction (default 0.1)")
+    parser.add_argument("--preprocess-sharpen-alpha", type=float,
+                        help="Alpha for laplacian sharpen (processed = x + alpha * laplacian(x)), default 1.0")
 
     # 再攻撃パラメータ
     parser.add_argument("--reattack-eps", type=fraction_float)
@@ -352,6 +369,9 @@ def parse_args() -> Config:
     elif preprocess_kind == PreprocessingKind.MY_PREPROCESS1:
         offset = args.preprocess_offset if args.preprocess_offset is not None else 0.1
         preprocess_params = MyPreprocess1Params(offset=offset)
+    elif preprocess_kind == PreprocessingKind.LAPLACIAN_SHARPEN:
+        alpha = args.preprocess_sharpen_alpha if args.preprocess_sharpen_alpha is not None else 1.0
+        preprocess_params = LaplacianSharpenParams(alpha=alpha)
 
     dataset = DatasetKind(args.dataset)
     device = utils.get_device()

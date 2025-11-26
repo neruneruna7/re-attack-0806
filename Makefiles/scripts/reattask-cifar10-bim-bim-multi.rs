@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 
 fn main() -> std::io::Result<()> {
     // 1. 設定: 変化させるパラメータと出力ファイル名
-    let eps_values = vec!["0.05", "0.1", "0.3", "0.5"];
+    let eps_values = vec!["2/255", "4/255", "8/255", "16/255"];
     let output_path = "experiment_log.txt";
 
     println!("実験を開始します。結果は {} に保存されます。", output_path);
@@ -52,9 +52,9 @@ fn main() -> std::io::Result<()> {
                 "--attack-kind",
                 "bim",
                 "--attack-eps",
-                "0.3",
+                "8/255",
                 "--attack-alpha",
-                "0.05",
+                "1/255",
                 "--attack-n",
                 "10",
                 "--reattack-kind",

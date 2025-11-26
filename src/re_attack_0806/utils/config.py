@@ -194,6 +194,7 @@ class PreprocessingKind(str, Enum):
     MEDIAN_BLUR = "median_blur"
     # 画素値の階調（ビット深度）を減らす前処理
     PIXEL_REDUCTION = "pixel_reduction"
+    LAPLACIAN_SHARPEN = "laplacian_sharpen"
     MY_PREPROCESS1 = "my_preprocess1"
     # 今後、JPEG圧縮などを追加可能
     # JPEG_COMPRESSION = "jpeg_compression"
@@ -228,5 +229,14 @@ class MyPreprocess1Params:
         """
         offset: float = 0.1
 
+
+@dataclass
+class LaplacianSharpenParams:
+    """ラプラシアンを用いたシャープ化のパラメータ。
+
+    - alpha: ラプラシアンを乗算する係数（出力 = x + alpha * laplacian(x)）。デフォルトは 1.0。
+    """
+    alpha: float = 1.0
+
 # 前処理パラメータの Union 型
-PreprocessingParams = Union[GaussianBlurParams, MedianBlurParams, PixelReductionParams, MyPreprocess1Params, None]
+PreprocessingParams = Union[GaussianBlurParams, MedianBlurParams, PixelReductionParams, MyPreprocess1Params, LaplacianSharpenParams, None]
