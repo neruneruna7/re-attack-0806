@@ -1,0 +1,516 @@
+# 実験結果データ抽出（サンプル数優先）
+# Generated from user provided text log
+
+# ==========================================
+# 再攻撃の場合のみの結果 (Re-Attack Only)
+# ==========================================
+
+# === bim no_preprocess bim ===
+[[experiments.preprocess_and_reattack.bim_no_preprocess_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784 # 8/255 (これまでの実験設定と同一と仮定)
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.preprocess]
+method = "no_preprocess"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.re_attack]
+method = "bim"
+epsilon = 0.00784313725490196 # 2/255
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.results]
+defense_success_rate_with_reattack = 0.2031
+
+[[experiments.preprocess_and_reattack.bim_no_preprocess_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.preprocess]
+method = "no_preprocess"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.re_attack]
+method = "bim"
+epsilon = 0.01568627450980392 # 4/255
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.results]
+defense_success_rate_with_reattack = 0.4241
+
+[[experiments.preprocess_and_reattack.bim_no_preprocess_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.preprocess]
+method = "no_preprocess"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.re_attack]
+method = "bim"
+epsilon = 0.03137254901960784 # 8/255
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.results]
+defense_success_rate_with_reattack = 0.6197
+
+[[experiments.preprocess_and_reattack.bim_no_preprocess_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.preprocess]
+method = "no_preprocess"
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.re_attack]
+method = "bim"
+epsilon = 0.06274509803921569 # 16/255
+[experiments.preprocess_and_reattack.bim_no_preprocess_bim.results]
+defense_success_rate_with_reattack = 0.6197
+
+# ==========================================
+# 前処理と再攻撃 (Preprocess and Re-Attack)
+# ==========================================
+
+
+
+# === bim gaus bim ===
+[[experiments.preprocess_and_reattack.bim_gauss_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_gauss_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gauss_bim.re_attack]
+method = "bim"
+epsilon = 0.00784313725490196
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.results]
+total_samples = 10000
+clean_correct_count = 7278 # クリーン精度 (7278/10000)
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278 # 初回攻撃成功率の分母
+defense_preprocess_success_count = 1628
+defense_reattack_success_count = 3135
+defense_total_count = 5327 # 防御成功率の分母
+final_correct_count = 4825 # 最終的な正解率 (4825/10000)
+
+[[experiments.preprocess_and_reattack.bim_gauss_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_gauss_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gauss_bim.re_attack]
+method = "bim"
+epsilon = 0.01568627450980392
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 1628
+defense_reattack_success_count = 3988
+defense_total_count = 5327
+final_correct_count = 5191
+
+[[experiments.preprocess_and_reattack.bim_gauss_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_gauss_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gauss_bim.re_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 1628
+defense_reattack_success_count = 4173
+defense_total_count = 5327
+final_correct_count = 4889
+
+[[experiments.preprocess_and_reattack.bim_gauss_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_gauss_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gauss_bim.re_attack]
+method = "bim"
+epsilon = 0.06274509803921569
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gauss_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 1628
+defense_reattack_success_count = 4166
+defense_total_count = 5327
+final_correct_count = 4813
+
+
+# === bim 輝度調整 bim ===
+# [[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+# dataset = "cifar10"
+# model = "morimoto-cifar10"
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+# method = "bim"
+# epsilon = 0.03137254901960784
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+# method = "pixel_reduction"
+# offset = 0.1
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+# method = "bim"
+# epsilon = 0.00784313725490196
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+# total_samples = 10000
+# clean_correct_count = 7278
+# initial_attack_success_count = 5327
+# initial_attack_total_count = 7278
+# defense_preprocess_success_count = 102
+# defense_reattack_success_count = 1140
+# defense_total_count = 5327
+# final_correct_count = 2347
+
+# [[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+# dataset = "cifar10"
+# model = "morimoto-cifar10"
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+# method = "bim"
+# epsilon = 0.03137254901960784
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+# method = "pixel_reduction"
+# offset = 0.1
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+# method = "bim"
+# epsilon = 0.01568627450980392
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+# total_samples = 10000
+# clean_correct_count = 7278
+# initial_attack_success_count = 5327
+# initial_attack_total_count = 7278
+# defense_preprocess_success_count = 102
+# defense_reattack_success_count = 2249
+# defense_total_count = 5327
+# final_correct_count = 2933
+
+# [[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+# dataset = "cifar10"
+# model = "morimoto-cifar10"
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+# method = "bim"
+# epsilon = 0.03137254901960784
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+# method = "pixel_reduction"
+# offset = 0.1
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+# method = "bim"
+# epsilon = 0.03137254901960784
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+# total_samples = 10000
+# clean_correct_count = 7278
+# initial_attack_success_count = 5327
+# initial_attack_total_count = 7278
+# defense_preprocess_success_count = 102
+# defense_reattack_success_count = 3246
+# defense_total_count = 5327
+# final_correct_count = 3480
+
+# [[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+# dataset = "cifar10"
+# model = "morimoto-cifar10"
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+# method = "bim"
+# epsilon = 0.03137254901960784
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+# method = "pixel_reduction"
+# offset = 0.1
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+# method = "bim"
+# epsilon = 0.06274509803921569
+# alpha = 0.00392156862745098
+# iters = 10
+# [experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+# total_samples = 10000
+# clean_correct_count = 7278
+# initial_attack_success_count = 5327
+# initial_attack_total_count = 7278
+# defense_preprocess_success_count = 102
+# defense_reattack_success_count = 3277
+# defense_total_count = 5327
+# final_correct_count = 3554
+
+# ==========================================
+# テキストログからの抽出データ
+# 前処理: Pixel Reduction (画素削減), Offset: 0.1
+# ==========================================
+
+# ==========================================
+# テキストログからの抽出データ (Run 3: Full Set)
+# 前処理: Pixel Reduction (画素削減), Offset: 0.1
+# ==========================================
+
+# === Re-attack epsilon: 2/255 ===
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.00784313725490196 # 2/255
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 403
+defense_reattack_success_count = 1451
+defense_total_count = 5327
+final_correct_count = 2834
+
+# === Re-attack epsilon: 4/255 ===
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.01568627450980392 # 4/255
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 403
+defense_reattack_success_count = 2451
+defense_total_count = 5327
+final_correct_count = 3289
+
+# === Re-attack epsilon: 8/255 ===
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.03137254901960784 # 8/255
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 403
+defense_reattack_success_count = 3347
+defense_total_count = 5327
+final_correct_count = 3655
+
+# === Re-attack epsilon: 16/255 ===
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.06274509803921569 # 16/255
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 403
+defense_reattack_success_count = 3384
+defense_total_count = 5327
+final_correct_count = 3705
+
+
+# === bim laplacian bim ===
+[[experiments.preprocess_and_reattack.bim_laplacian_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_laplacian_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.preprocess]
+method = "laplacian_sharpen"
+alpha = 1.5
+[experiments.preprocess_and_reattack.bim_laplacian_bim.re_attack]
+method = "bim"
+epsilon = 0.00784313725490196
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 475
+defense_reattack_success_count = 558
+defense_total_count = 5327
+final_correct_count = 1160
+
+[[experiments.preprocess_and_reattack.bim_laplacian_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_laplacian_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.preprocess]
+method = "laplacian_sharpen"
+alpha = 1.5
+[experiments.preprocess_and_reattack.bim_laplacian_bim.re_attack]
+method = "bim"
+epsilon = 0.01568627450980392
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 475
+defense_reattack_success_count = 619
+defense_total_count = 5327
+final_correct_count = 1147
+
+[[experiments.preprocess_and_reattack.bim_laplacian_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_laplacian_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.preprocess]
+method = "laplacian_sharpen"
+alpha = 1.5
+[experiments.preprocess_and_reattack.bim_laplacian_bim.re_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 475
+defense_reattack_success_count = 740
+defense_total_count = 5327
+final_correct_count = 1195
+
+[[experiments.preprocess_and_reattack.bim_laplacian_bim]]
+dataset = "cifar10"
+model = "morimoto-cifar10"
+[experiments.preprocess_and_reattack.bim_laplacian_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.preprocess]
+method = "laplacian_sharpen"
+alpha = 1.5
+[experiments.preprocess_and_reattack.bim_laplacian_bim.re_attack]
+method = "bim"
+epsilon = 0.06274509803921569
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_laplacian_bim.results]
+total_samples = 10000
+clean_correct_count = 7278
+initial_attack_success_count = 5327
+initial_attack_total_count = 7278
+defense_preprocess_success_count = 475
+defense_reattack_success_count = 800
+defense_total_count = 5327
+final_correct_count = 1242

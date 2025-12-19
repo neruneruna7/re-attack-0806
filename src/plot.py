@@ -94,7 +94,6 @@ def plot_graph(baseline_eps, baseline_rates,
     plt.figure(figsize=(10, 6))
     
     # ユニバーサルデザイン(UD)に配慮したカラーパレット
-    # 黒/グレー: ベースライン, オレンジ: 防御成功率, 青: 全体正解率
     color_baseline = '#595959' # ダークグレー
     color_defense = '#E69F00'  # オレンジ
     color_global = '#0072B2'   # ブルー
@@ -111,19 +110,23 @@ def plot_graph(baseline_eps, baseline_rates,
     plt.plot(method_eps, method_global_rates, marker='s', linestyle='-', 
              color=color_global, label='前処理＋再攻撃（全体正解率）', linewidth=2)
     
-    # グラフの装飾
-    plt.title(f'前処理手法: {method_name_jp} における防御性能', fontsize=16)
-    plt.xlabel('Epsilon (摂動の大きさ)', fontsize=14)
-    plt.ylabel('確率 (Probability)', fontsize=14)
+    # グラフの装飾（フォントサイズを約1.7倍に変更）
+    plt.title(f'前処理手法: {method_name_jp} における防御性能', fontsize=27) # 16 -> 27
+    plt.xlabel('Epsilon (摂動の大きさ)', fontsize=24) # 14 -> 24
+    plt.ylabel('確率 (Probability)', fontsize=24)    # 14 -> 24
     plt.grid(True, linestyle=':', alpha=0.6)
-    plt.legend(fontsize=12)
-    plt.ylim(0, 1.05) # 確率は0-1の範囲
+    plt.legend(fontsize=20) # 12 -> 20
+    plt.ylim(0, 1.05)
+    
+    # 目盛りのフォントサイズも大きく設定（新規追加）
+    plt.tick_params(labelsize=20) 
     
     # 保存
     plt.tight_layout()
     plt.savefig(output_filename)
     print(f"グラフを保存しました: {output_filename}")
     plt.close()
+
 
 def main():
     toml_file = "winf2025.toml" # 読み込むTOMLファイル名
