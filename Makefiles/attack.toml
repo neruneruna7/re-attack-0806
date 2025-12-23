@@ -85,6 +85,30 @@
         "128",
     ]
 
+[tasks.attack-resnet20-cifar10-bim]
+    description="Attack ResNet20 CIFAR-10 model with BIM"
+    category="Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_ae.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "resnet20",
+        "--attack",
+        "bim",
+        "--epsilon",
+        "0.3",
+        "--alpha",
+        "0.05",
+        "--n",
+        "10",
+        "--batch-size",
+        "128",
+    ]
+
+
 [tasks.attack-morimoto-cifar10-foolbox-bim]
     description="Attack Morimoto CIFAR-10 model with BIM"
     category="Attacks"

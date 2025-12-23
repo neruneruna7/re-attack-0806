@@ -17,7 +17,8 @@ import argparse
 import re_attack_0806
 from copy import deepcopy
 
-from re_attack_0806.models import MorimotoCifar10, MorimotoMnist, Ploof
+from re_attack_0806.models import MorimotoCifar10, MorimotoMnist, Ploof, KumagaiResnet
+
 from re_attack_0806.utils.normTensor import * 
 
 
@@ -31,6 +32,7 @@ class ModelKind(str, Enum):
     MORIMOTO_CIFAR10 = "morimoto-cifar10"
     INCEPTION_V3 = "inception-v3"
     PLOOF = "ploof"
+    RESNET20 = "resnet20"
 
 class AttackKind(str, Enum):
     BIM = "bim"
@@ -134,6 +136,9 @@ class ModelFactory:
         if kind == ModelKind.INCEPTION_V3:
             from torchvision.models import inception_v3
             model = inception_v3(pretrained=True, aux_logits=True)
+            return model.to(device)
+        if kind == ModelKind.RESNET20:
+            model = KumagaiResnet.resnet20()
             return model.to(device)
         raise ValueError(f"unsupported model kind: {kind}")
 

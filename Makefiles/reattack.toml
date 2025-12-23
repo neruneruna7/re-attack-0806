@@ -57,6 +57,38 @@
         "128",
     ]
 
+[tasks.reattack-resnet20-cifar10-bim-bim]
+    description="Re-attack ResNet20 CIFAR10 model with BIM"
+    category="Re-Attacks"
+    command="uv"
+    args=[
+        "run",
+        "src/general_reattack.py",
+        "--dataset",
+        "cifar10",
+        "--model",
+        "resnet20",
+        "--attack-kind",
+        "bim",
+        "--attack-eps",
+        "0.3",
+        "--attack-alpha",
+        "0.05",
+        "--attack-n",
+        "10",
+        "--reattack-kind",
+        "bim",
+        "--reattack-eps",
+        "0.3",
+        "--reattack-alpha",
+        "0.05",
+        "--reattack-n",
+        "10",
+        "--batch-size",
+        "128",
+    ]
+
+
 [tasks.reattack-morimoto-cifar10-foolbox-bim-foolbox-bim]
     description="Re-attack Morimoto CIFAR10 model with BIM"
     category="Re-Attacks"

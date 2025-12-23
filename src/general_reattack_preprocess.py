@@ -111,15 +111,29 @@ class Runner:
                 self.reattack_obj = foolbox.attacks.FGSM() # type: ignore[reportPrivateImportUsage]
 
     def _load_weights_if_exists(self, model_dir: str):
-        model_name = getattr(self.model, "model_name", None)
-        path = os.path.join(model_dir, f"{model_name}.pth")
-        if os.path.exists(path) and model_name:
-            st = torch.load(path, map_location=self.device)
-            try:
-                self.model.load_state_dict(st)
-                print(f"loaded weights from {path}")
-            except Exception:
-                print(f"failed to load exact state_dict from {path}")
+            model_name = getattr(self.model, "model_name", None)
+            if model_name is None:
+                print(f"warning: model has no 'model_name' attribute, skipping weight load")
+                return
+
+            # .ckpt ファイルのパスを構築
+            path = os.path.join(model_dir, f"{model_name}.ckpt")
+            
+            if os.path.exists(path):
+                try:
+                    # 提示された読み込みロジックを適用
+                    checkpoint = torch.load(path, map_location=self.device)
+                    
+                    # 'state_dict' キーが含まれている場合の処理
+                    if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                        st = checkpoint['state_dict']
+                    else:
+                        st = checkpoint
+                    
+                    self.model.load_state_dict(st)
+                    print(f"loaded weights from {path}")
+                except Exception as e:
+                    print(f"failed to load state_dict from {path}: {e}")
 
     @staticmethod
     def _to_logits(output: Tensor) -> Tensor:
