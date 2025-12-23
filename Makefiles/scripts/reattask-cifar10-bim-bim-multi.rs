@@ -48,7 +48,7 @@ fn main() -> std::io::Result<()> {
                 "--dataset",
                 "cifar10",
                 "--model",
-                "morimoto-cifar10",
+                "resnet20",
                 "--attack-kind",
                 "bim",
                 "--attack-eps",
@@ -62,7 +62,7 @@ fn main() -> std::io::Result<()> {
                 "--reattack-eps",
                 eps, // 変化させるパラメータ
                 "--reattack-alpha",
-                "0.05",
+                "1/255",
                 "--reattack-n",
                 "10",
                 "--batch-size",

@@ -48,7 +48,7 @@ fn main() -> std::io::Result<()> {
                 "--dataset",
                 "cifar10",
                 "--model",
-                "morimoto-cifar10",
+                "resnet20",
                 "--attack-kind",
                 "bim",
                 "--attack-eps",

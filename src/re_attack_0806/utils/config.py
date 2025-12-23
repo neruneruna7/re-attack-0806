@@ -97,8 +97,10 @@ class DatasetNorm:
             mean = [0.1307]
             std = [0.3081]
         elif dataset_kind == DatasetKind.CIFAR10:
-            mean = [0.4914, 0.4822, 0.4465]
-            std = [0.2470, 0.2435, 0.2616]
+            # mean = [0.4914, 0.4822, 0.4465]
+            # std = [0.2470, 0.2435, 0.2616]
+            mean = [0.5, 0.5, 0.5]
+            std = [0.5, 0.5, 0.5]
         elif dataset_kind == DatasetKind.IMAGE_NET:
             mean = [0.485, 0.456, 0.406]
             std = [0.229, 0.224, 0.225]
