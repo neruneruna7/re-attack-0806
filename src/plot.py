@@ -129,7 +129,7 @@ def plot_graph(baseline_eps, baseline_rates,
 
 
 def main():
-    toml_file = "winf2025.toml" # 読み込むTOMLファイル名
+    toml_file = "graduate.toml" # 読み込むTOMLファイル名
     
     if not os.path.exists(toml_file):
         print(f"エラー: {toml_file} が見つかりません。")
@@ -146,9 +146,9 @@ def main():
     
     # 各手法の設定 (TOMLのキー, 日本語表示名, 保存ファイル名)
     methods = [
-        ('bim_gauss_bim', 'ガウシアンブラー', 'graph_gaussian.png'),
+        ('bim_gaussian_blur_bim', 'ガウシアンブラー', 'graph_gaussian.png'),
         ('bim_pixel_reduction_bim', '輝度調整', 'graph_pixel_reduction.png'),
-        ('bim_laplacian_bim', 'ラプラシアン先鋭化', 'graph_laplacian.png')
+        # ('bim_laplacian_bim', 'ラプラシアン先鋭化', 'graph_laplacian.png')
     ]
     
     for key, jp_name, fname in methods:

@@ -48,7 +48,8 @@ def calculate_metrics(df):
 
 def main():
     # CSVを読み込む（実運用では pd.read_csv("filename.csv") を使用）
-    df = pd.read_csv("./attacked_data/imagenet/bim/eps_0.031/attack_results.csv")
+    df = pd.read_csv("preprocessed_reattacked_data/cifar10/resnet20/bim, epsilon: 0.03137254901960784, alpha: 0.00392156862745098, iters: 10/gaussian_blur, kernel_size: 3, sigma: 0.5/bim, epsilon: 0.00784313725490196, alpha: 0.00392156862745098, iters: 10/results.csv")
+    
 
     # 計算実行
     metrics = calculate_metrics(df)
