@@ -1,0 +1,158 @@
+# ガウシアンぼかし
+[[experiments.preprocess_and_reattack.bim_gaussian_blur_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.re_attack]
+method = "bim"
+epsilon = 0.00784313725490196
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.results]
+defense_success_rate_with_reattack = 0.4587
+
+[[experiments.preprocess_and_reattack.bim_gaussian_blur_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.re_attack]
+method = "bim"
+epsilon = 0.01568627450980392
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.results]
+defense_success_rate_with_reattack = 0.5234
+
+[[experiments.preprocess_and_reattack.bim_gaussian_blur_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.re_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.results]
+defense_success_rate_with_reattack = 0.5250
+
+[[experiments.preprocess_and_reattack.bim_gaussian_blur_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.preprocess]
+method = "gaussian_blur"
+kernel_size = 3
+sigma = 0.5
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.re_attack]
+method = "bim"
+epsilon = 0.06274509803921569
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_gaussian_blur_bim.results]
+defense_success_rate_with_reattack = 0.5249
+
+
+# 輝度調整
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.00784313725490196
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+defense_success_rate_with_reattack = 0.1094
+
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.01568627450980392
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+defense_success_rate_with_reattack = 0.2609
+
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+defense_success_rate_with_reattack = 0.2804
+
+[[experiments.preprocess_and_reattack.bim_pixel_reduction_bim]]
+dataset = "cifar10"
+model = "resnet20"
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.initial_attack]
+method = "bim"
+epsilon = 0.03137254901960784
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.preprocess]
+method = "pixel_reduction"
+offset = 0.1
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.re_attack]
+method = "bim"
+epsilon = 0.06274509803921569
+alpha = 0.00392156862745098
+iters = 10
+[experiments.preprocess_and_reattack.bim_pixel_reduction_bim.results]
+defense_success_rate_with_reattack = 0.2804
