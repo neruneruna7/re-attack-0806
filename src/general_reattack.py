@@ -19,6 +19,7 @@ import argparse
 import re_attack_0806
 from copy import deepcopy
 import concurrent.futures # パフォーマンス改善のために追加
+import collections # 追加: カウント用
 
 from re_attack_0806 import attacks, utils
 from re_attack_0806.attacks import bim, fgsm
@@ -71,9 +72,15 @@ class ReAttackResult:
     l2_attacked_vs_reattacked: float
     l2_clean_vs_reattacked: float
     reattacked_image_ts: TensorWithState # 画像データ（保存用）
+    # 追加: 正解ラベルの確率とランク (攻撃後 & 再攻撃後)
+    attack_prob_correct: float      # 追加
+    attack_rank_correct: int        # 追加
+    reattack_prob_correct: float
+    reattack_rank_correct: int
 
 
-def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm: NormTensor, target_labels: Tensor, eval_model: nn.Module, device: torch.device, mean: Tensor, std: Tensor, config: Config) -> Tuple[utils.TensorWithState[bim.Normalized], Tensor]:
+# 戻り値の型ヒントを変更: Tensor (pred) -> Tensor (pred), Tensor (logits)
+def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm: NormTensor, target_labels: Tensor, eval_model: nn.Module, device: torch.device, mean: Tensor, std: Tensor, config: Config) -> Tuple[utils.TensorWithState[bim.Normalized], Tensor, Tensor]:
     if attack_kind == AttackKind.BIM:
         assert isinstance(attack_params, BIMAttackParam), "Invalid params for BIM"
         params = attack_params
@@ -86,11 +93,13 @@ def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm
         std_list = std.squeeze().tolist()
         preprocessing = dict(mean=mean_list, std=std_list, axis=-3)
         bounds = (0.0, 1.0)
-        fmodel = foolbox.PyTorchModel(eval_model, bounds=bounds, preprocessing=preprocessing, device=self.device) # type: ignore[reportPrivateImportUsage]
+        # 注意: self.device はここにはないので引数の device を使うか、呼び出し元で処理する設計ですが、
+        # ここでは既存コードに合わせて foolbox モデルを再作成しています。
+        fmodel = foolbox.PyTorchModel(eval_model, bounds=bounds, preprocessing=preprocessing, device=device) 
         foolbox_attack = None
         if attack_kind == AttackKind.FOOLBOX_BIM:
             assert isinstance(attack_params, BIMAttackParam), "Invalid params for FoolboxBIM"
-            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=self.cfg.attack_params.iters, abs_stepsize=self.cfg.attack_params.alpha) # type: ignore[reportPrivateImportUsage]
+            foolbox_attack = foolbox.attacks.LinfBasicIterativeAttack(steps=attack_params.iters, abs_stepsize=attack_params.alpha) 
         elif attack_kind == AttackKind.FOOLBOX_FGSM:
             assert isinstance(attack_params, FGSMAttackParam), "Invalid params for FoolboxFGSM"
             foolbox_attack = foolbox.attacks.FGSM()
@@ -103,6 +112,7 @@ def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm
             attacked_ts_norm = config.dataset_norm.normalize(perturbed_denorm_ts)
         except Exception as e:
             print(f"Foolbox {attack_kind.value} attack failed: {e}")
+            attacked_ts_norm = input_data_norm # フォールバック
 
     elif attack_kind == AttackKind.FGSM:
         assert isinstance(attack_params, FGSMAttackParam), "Invalid params for FGSM"
@@ -112,67 +122,14 @@ def attack(attack_kind: AttackKind, attack_params: AttackParams, input_data_norm
         # 攻撃コード終了
     attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
 
-        # 攻撃後推論
+    # 攻撃後推論
     out_attacked: Final[Tensor] = eval_model(attacked_ts_norm_f.tensor)
     logits_attacked: Final[Tensor] = _to_logits(out_attacked)
 
-    # probs = F.softmax(logits_attacked, dim=1)
-    # conf_max = probs.max(1)[0]
-    # # ロジットの最大値、最小値、平均値を表示
-    # # 入力テンソルの範囲を確認
-    # print(f"Input Tensor Stats - Max: {input_data_norm.tensor.max().item():.4f}, Min: {input_data_norm.tensor.min().item():.4f}")
-    # print(f"Attacked Tensor Stats - Max: {attacked_ts_norm_f.tensor.max().item():.4f}, Min: {attacked_ts_norm_f.tensor.min().item():.4f}")
-    # print(f"Logits Raw Stats - Max: {logits_attacked.max().item():.4f}, Min: {logits_attacked.min().item():.4f}, Mean: {logits_attacked.mean().item():.4f}")
-    # print(f"Logits Shape: {logits_attacked.shape}")
-    # print(f"Confidence - Mean: {conf_max.mean().item():.4f}, Max: {conf_max.max().item():.4f}, Min: {conf_max.min().item():.4f}")
-
-    # try:
-    #     # 最後のレイヤーを取得（モデル構造に合わせて調整してください）
-    #     last_layer = list(eval_model.modules())[-1] 
-        
-    #     if hasattr(last_layer, 'weight'):
-    #         weights = last_layer.weight.data
-    #         print(f"Last Layer Weights - Max: {weights.max().item():.4f}, Mean: {weights.mean().item():.4f}, Std: {weights.std().item():.4f}")
-    #     else:
-    #         print("最後のレイヤーにweight属性がありません。")
-    # except Exception as e:
-    #     print(f"重みの確認中にエラー: {e}")
-    # # フックを使って最終層への入力とバイアスを確認する
-    # def inspect_final_layer(module, input, output):
-    #     # inputはタプルなので最初の要素を取得
-    #     features = input[0]
-    #     print("--- Final Layer Inspection ---")
-    #     print(f"Features (Input to FC) - Max: {features.max().item():.4f}, Mean: {features.mean().item():.4f}")
-        
-    #     if module.bias is not None:
-    #         print(f"Bias Values - Max: {module.bias.max().item():.4f}, Mean: {module.bias.mean().item():.4f}")
-    #     else:
-    #         print("Bias: None")
-    #     print("------------------------------")
-
-    # 最終層（fcやclassifierなど）にフックを登録
-    # モデルの構造に合わせて layer_name を調整してください
-    # ResNetなどは 'fc', VGGなどは 'classifier' のことが多いです
-    # target_layer = None
-    # for name, module in eval_model.named_modules():
-    #     # 最後の線形層を自動で見つける簡易ロジック
-    #     if isinstance(module, torch.nn.Linear):
-    #         target_layer = module
-    #         # 最後の層を取得したいのでループを回し続ける（上書きしていく）
-
-    # if target_layer is not None:
-    #     handle = target_layer.register_forward_hook(inspect_final_layer)
-        
-    #     # 一度推論を走らせる（これでフックが呼ばれます）
-    #     _ = eval_model(attacked_ts_norm_f.tensor)
-        
-    #     handle.remove() # フック解除
-    # else:
-    #     print("Linear Layerが見つかりませんでした。")
-
-
     pred_attacked: Final[Tensor] = logits_attacked.max(1, keepdim=True)[1]
-    return attacked_ts_norm_f, pred_attacked
+    
+    # logitsも返すように変更
+    return attacked_ts_norm_f, pred_attacked, logits_attacked
 
 
 @staticmethod
@@ -259,15 +216,14 @@ class Runner:
             if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                 break
             
-            current_batch_size, target_ts, pred_clean, pred_attacked, pred_reattacked, reattacked_data_denorm, l2_clean_vs_attacked, l2_attacked_vs_reattacked, l2_clean_vs_reattacked = self.inner_loop(data, target)
+            # 戻り値を受け取る変数を追加
+            current_batch_size, target_ts, pred_clean, pred_attacked, pred_reattacked, reattacked_data_denorm, l2_clean_vs_attacked, l2_attacked_vs_reattacked, l2_clean_vs_reattacked, prob_correct, rank_correct, prob_correct_attacked, rank_correct_attacked = self.inner_loop(data, target)
 
             for j in range(current_batch_size):
                 if self.cfg.num_samples != -1 and global_idx >= self.cfg.num_samples:
                     return
 
                 reattacked_sample_denorm_ts = TensorWithState(reattacked_data_denorm[j].detach().cpu(), DENORMALIZED)
-
-                # print(f"Index {global_idx}: Target {target_ts[j].item()}, Clean Pred {pred_clean.view(-1)[j].item()}, Attacked Pred {pred_attacked.view(-1)[j].item()}, Reattacked Pred {pred_reattacked.view(-1)[j].item()}")
 
                 yield ReAttackResult(
                     index=global_idx,
@@ -278,7 +234,12 @@ class Runner:
                     l2_clean_vs_attacked=l2_clean_vs_attacked[j].item(),
                     l2_attacked_vs_reattacked=l2_attacked_vs_reattacked[j].item(),
                     l2_clean_vs_reattacked=l2_clean_vs_reattacked[j].item(),
-                    reattacked_image_ts=reattacked_sample_denorm_ts
+                    reattacked_image_ts=reattacked_sample_denorm_ts,
+                    # 新しい指標を追加
+                    attack_prob_correct=prob_correct_attacked[j].item(), # 追加
+                    attack_rank_correct=rank_correct_attacked[j].item(), # 追加
+                    reattack_prob_correct=prob_correct[j].item(),
+                    reattack_rank_correct=rank_correct[j].item()
                 )
                 global_idx += 1
 
@@ -288,23 +249,13 @@ class Runner:
         clean_data_ts: Final[DenormTensor] = TensorWithState(data.to(self.device), DENORMALIZED)
         clean_data_ts_norm: Final[NormTensor] = self.cfg.dataset_norm.normalize(clean_data_ts)
         target_ts: Final[Tensor] = target.to(self.device).view(-1).long()
+        target_indices = target_ts.view(-1, 1) # gather用
             
         # クリーンデータ推論
         output_clean: Final[Tensor] = eval_model(clean_data_ts_norm.tensor)
-        # logits_clean: Final[Tensor] = _to_logits(output_clean)
-        # pred_clean: Final[Tensor] = logits_clean.max(1, keepdim=True)[1]
-        # print(f"clean Logits Raw Stats - Max: {logits_clean.max().item():.4f}, Min: {logits_clean.min().item():.4f}, Mean: {logits_clean.mean().item():.4f}")
-        # print(f"clean Logits Shape: {logits_clean.shape}")
         pred_clean: Final[Tensor] = output_clean.max(1, keepdim=True)[1]
-        # print(f"clean Logits Raw Stats - Max: {output_clean.max().item():.4f}, Min: {output_clean.min().item():.4f}, Mean: {output_clean.mean().item():.4f}")
-        # print(f"clean Logits Shape: {output_clean.shape}")
         
-
-
-            # _perform_attackは常に正規化データを返すので、データの状態管理がシンプルになる
-            # attacked_data_ts_norm = self._perform_attack(clean_data_ts_norm, target_ts, self.cfg.attack_kind, self.cfg.attack_params)
-            # 攻撃コード開始
-
+        # 攻撃コード開始
         result = attack(
             self.cfg.attack_kind,
             self.cfg.attack_params,
@@ -316,15 +267,20 @@ class Runner:
             self.cfg.dataset_norm.std,
             self.cfg
         )
-        attacked_ts_norm, pred_attacked = result
+        # 3つの戻り値を受け取る (logitsはここでは使わないが受け取る必要がある)
+        attacked_ts_norm, pred_attacked, logits_attacked = result
         attacked_ts_norm_f: Final[NormTensor] = attacked_ts_norm
 
-
+        # --- 追加: 攻撃後(再攻撃前)の正解ラベルの確率とランクの計算 ---
+        probs_attacked = F.softmax(logits_attacked, dim=1)
+        prob_correct_attacked = probs_attacked.gather(1, target_indices).view(-1)
+        
+        target_logits_attacked = logits_attacked.gather(1, target_indices)
+        rank_correct_attacked = (logits_attacked > target_logits_attacked).sum(dim=1) + 1
 
 
         reattack_target: Final[Tensor] = pred_attacked.view(-1).long()
-            # reattacked_data_ts_norm = self._perform_attack(attacked_data_ts_norm, reattack_target, self.cfg.reattack_kind, self.cfg.reattack_params)
-            # 再攻撃コード開始
+        # 再攻撃コード開始
 
         result_reattack = attack(
             self.cfg.reattack_kind,
@@ -337,11 +293,19 @@ class Runner:
             self.cfg.dataset_norm.std,
             self.cfg
         )
-        reattacked_ts_norm, pred_reattacked = result_reattack
+        # 3つの戻り値を受け取る (logits_reattackedを受け取る)
+        reattacked_ts_norm, pred_reattacked, logits_reattacked = result_reattack
         reattacked_ts_norm_f: Final[NormTensor] = reattacked_ts_norm
             
+        # --- 追加: 再攻撃後の正解ラベルの確率とランクの計算 ---
+        probs_reattacked = F.softmax(logits_reattacked, dim=1)
+        prob_correct = probs_reattacked.gather(1, target_indices).view(-1)
+        
+        target_logits = logits_reattacked.gather(1, target_indices)
+        # ブロードキャスト比較: (Batch, NumClass) > (Batch, 1)
+        rank_correct = (logits_reattacked > target_logits).sum(dim=1) + 1
 
-            # --- 以降、評価と結果のyield ---
+        # --- 以降、評価と結果のyield ---
         clean_data_denorm = self.cfg.dataset_norm.denormalize(clean_data_ts_norm).tensor
         attacked_data_denorm = self.cfg.dataset_norm.denormalize(attacked_ts_norm).tensor
         reattacked_data_denorm = self.cfg.dataset_norm.denormalize(reattacked_ts_norm).tensor
@@ -349,7 +313,9 @@ class Runner:
         l2_clean_vs_attacked = torch.linalg.norm((attacked_data_denorm - clean_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
         l2_attacked_vs_reattacked = torch.linalg.norm((reattacked_data_denorm - attacked_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
         l2_clean_vs_reattacked = torch.linalg.norm((reattacked_data_denorm - clean_data_denorm).view(current_batch_size, -1), ord=2, dim=1)
-        return current_batch_size,target_ts,pred_clean,pred_attacked,pred_reattacked,reattacked_data_denorm,l2_clean_vs_attacked,l2_attacked_vs_reattacked,l2_clean_vs_reattacked
+        
+        # 戻り値に prob_correct, rank_correct を追加
+        return current_batch_size,target_ts,pred_clean,pred_attacked,pred_reattacked,reattacked_data_denorm,l2_clean_vs_attacked,l2_attacked_vs_reattacked,l2_clean_vs_reattacked, prob_correct, rank_correct, prob_correct_attacked, rank_correct_attacked
 
 def fraction_float(s: str) -> float:
     if "/" in s:
@@ -447,6 +413,13 @@ class ExperimentStats:
     reattack_successful: int = 0
     reattack_successful_to_clean: int = 0
     reattack_correct_to_original: int = 0
+    # 追加: リストで全データを保持（統計量計算用）
+    prob_correct_reattack_list: list = field(default_factory=list)
+    rank_correct_reattack_list: list = field(default_factory=list)
+    
+    # 追加: 攻撃後(再攻撃前)のリスト
+    prob_correct_attack_list: list = field(default_factory=list)
+    rank_correct_attack_list: list = field(default_factory=list)
 
 def main():
     cfg = parse_args()
@@ -456,7 +429,6 @@ def main():
     result_generator = runner.run()
 
     # ----- 統計情報の初期化とパス生成 -----
-    stats = {'total': 0, 'clean_correct': 0, 'attack_successful': 0, 'reattack_successful': 0, 'reattack_successful_to_clean': 0, 'reattack_correct_to_original': 0}
     
     # epsilonをattack_paramsから取得
     attack_eps_str = f"{cfg.attack_params.epsilon:.3f}"
@@ -468,10 +440,15 @@ def main():
     output_folder = os.path.join(cfg.output_dir, cfg.dataset.value, cfg.model.value, attack_params_str, reattack_params_str)
     os.makedirs(output_folder, exist_ok=True)
     
+    # ヘッダーに prob_correct_reattack, rank_correct_reattack を追加
+    # さらに attack_prob_correct, attack_rank_correct も追加
     csv_filename = os.path.join(output_folder, "0_reattack_results.csv")
     csv_header = [
         "index", "target_label", "pred_clean", "pred_attacked", "pred_reattacked",
-        "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked", "reattacked_image_path"
+        "l2_clean_vs_attacked", "l2_attacked_vs_reattacked", "l2_clean_vs_reattacked", 
+        "prob_correct_attack", "rank_correct_attack",   # 追加
+        "prob_correct_reattack", "rank_correct_reattack", 
+        "reattacked_image_path"
     ]
     
     # パフォーマンス改善: ThreadPoolExecutorとCSV writerをループの外で初期化
@@ -491,7 +468,13 @@ def main():
             l2_c_a = result_tuple.l2_clean_vs_attacked
             l2_a_r = result_tuple.l2_attacked_vs_reattacked
             l2_c_r = result_tuple.l2_clean_vs_reattacked
-            image_ts = result_tuple.reattacked_image_ts 
+            image_ts = result_tuple.reattacked_image_ts
+            # 新しい指標を取得
+            prob_r_corr = result_tuple.reattack_prob_correct
+            rank_r_corr = result_tuple.reattack_rank_correct
+            
+            prob_a_corr = result_tuple.attack_prob_correct # 追加
+            rank_a_corr = result_tuple.attack_rank_correct # 追加
 
             stats.total += 1
 
@@ -504,6 +487,15 @@ def main():
                 stats.clean_correct += 1
                 if pred_a != pred_c:
                     stats.attack_successful += 1
+                    
+                    # 攻撃に成功したサンプル(クリーン正解かつ攻撃成功)のみを集計対象にする
+                    stats.prob_correct_reattack_list.append(prob_r_corr)
+                    stats.rank_correct_reattack_list.append(rank_r_corr)
+                    
+                    # 攻撃後(再攻撃前)の指標も集計対象に追加
+                    stats.prob_correct_attack_list.append(prob_a_corr)
+                    stats.rank_correct_attack_list.append(rank_a_corr)
+
                     # 再攻撃が成功し、元の予測から変わった場合 (ターゲット化された再攻撃の成功)
                     if pred_r != pred_a:
                          stats.reattack_successful += 1
@@ -518,7 +510,8 @@ def main():
                 future = executor.submit(utils.save_tensor_as_image, image_ts.tensor, image_path)
                 futures[future] = idx
 
-            csv_row = [idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, image_path]
+            # CSV行に新しい指標を追加
+            csv_row = [idx, target, pred_c, pred_a, pred_r, l2_c_a, l2_a_r, l2_c_r, prob_a_corr, rank_a_corr, prob_r_corr, rank_r_corr, image_path]
             writer.writerow(csv_row)
 
 
@@ -559,6 +552,67 @@ def main():
             print(f"  再攻撃成功率 (攻撃後から変化): {stats.reattack_successful / stats.attack_successful:.4f} ({stats.reattack_successful}/{stats.attack_successful})")
             print(f"  再攻撃成功率 (正しい識別に戻ったもの): {stats.reattack_successful_to_clean / stats.attack_successful:.4f} ({stats.reattack_successful_to_clean}/{stats.attack_successful})")
     print(f"  再攻撃後正解率(クリーン識別成功，攻撃成功を考慮しない): {stats.reattack_correct_to_original / stats.total:.4f} ({stats.reattack_correct_to_original}/{stats.total})")
+    
+    # --- コンソール出力: 詳細統計量 ---
+    def print_stats_summary(name, data):
+        if not data:
+            print(f"  {name}: データなし")
+            return
+        
+        d = np.array(data)
+        count = len(d)
+        mean = np.mean(d)
+        std = np.std(d)
+        min_val = np.min(d)
+        q25 = np.percentile(d, 25)
+        median = np.median(d)
+        q75 = np.percentile(d, 75)
+        max_val = np.max(d)
+        
+        print(f"  {name} 統計量 (N={count}):")
+        print(f"    Mean: {mean:.4f}, Std: {std:.4f}")
+        print(f"    Min: {min_val:.4f}, 25%: {q25:.4f}, Median: {median:.4f}, 75%: {q75:.4f}, Max: {max_val:.4f}")
+
+    def print_rank_distribution(name, data):
+        if not data:
+             return
+        print(f"\n  [ランク別詳細分布: {name} (攻撃成功サンプルのみ)]")
+        rank_counts = collections.Counter(data)
+        total_samples = len(data)
+        max_rank = max(data)
+        cumulative_prob = 0.0
+        
+        # 上位10位まで + それ以降をまとめて表示するなど、量が多い場合の工夫も可能だが
+        # ここでは最大ランクまでループ（CIFAR10なら最大10なので問題ない）
+        limit = 20 # 安全のため
+        
+        for r in range(1, max_rank + 1):
+            if r > limit:
+                print(f"    ... (以降省略)")
+                break
+            count = rank_counts.get(r, 0)
+            if count == 0 and r > 10: continue # 0件かつ10位以降は表示省略してもよい
+
+            prob = count / total_samples
+            cumulative_prob += prob
+            print(f"    {r}位に入る確率: {prob:.4f} ({count}/{total_samples}) [累積: {cumulative_prob:.4f}]")
+
+
+    if len(stats.prob_correct_reattack_list) > 0:
+        # 攻撃後 (Attack) の統計
+        print_stats_summary("攻撃後の正解ラベル確率 (攻撃成功サンプルのみ)", stats.prob_correct_attack_list)
+        print_stats_summary("攻撃後の正解ラベル順位 (攻撃成功サンプルのみ)", stats.rank_correct_attack_list)
+        print_rank_distribution("攻撃後", stats.rank_correct_attack_list)
+        print("-" * 20)
+
+        # 再攻撃後 (Re-Attack) の統計
+        print_stats_summary("再攻撃後の正解ラベル確率 (攻撃成功サンプルのみ)", stats.prob_correct_reattack_list)
+        print_stats_summary("再攻撃後の正解ラベル順位 (攻撃成功サンプルのみ)", stats.rank_correct_reattack_list)
+        print_rank_distribution("再攻撃後", stats.rank_correct_reattack_list)
+
+    else:
+        print("  攻撃成功サンプルが0件のため、統計量を計算できませんでした。")
+    
     print(f"結果は {csv_filename} に保存されました。")
     print("=========================")
 
