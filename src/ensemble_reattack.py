@@ -346,6 +346,9 @@ class ExperimentStats:
     
     ensemble_successful_to_clean: int = 0 # アンサンブルで正解に戻った
     
+    # New: 全サンプルに対するアンサンブル正解数
+    ensemble_correct: int = 0
+
     # 統計用リスト (攻撃成功サンプルのみ)
     prob_correct_attack_list: list = field(default_factory=list)
     rank_correct_attack_list: list = field(default_factory=list)
@@ -386,6 +389,10 @@ def main():
         for res in result_generator:
             stats.total += 1
             
+            # 全サンプルでのアンサンブル正解判定
+            if res.pred_ensemble == res.target_label:
+                stats.ensemble_correct += 1
+
             # 統計更新
             if res.pred_clean == res.target_label:
                 stats.clean_correct += 1
@@ -432,6 +439,9 @@ def main():
     print(f"  Total Samples: {stats.total}")
     print(f"  Clean Accuracy: {stats.clean_correct}/{stats.total} ({stats.clean_correct/stats.total:.4f})")
     
+    # 全サンプルに対するアンサンブル精度
+    print(f"  Ensemble Accuracy (All):    {stats.ensemble_correct}/{stats.total} ({stats.ensemble_correct/stats.total:.4f})")
+
     if stats.clean_correct > 0:
         print(f"  Attack Success Rate: {stats.attack_successful}/{stats.clean_correct} ({stats.attack_successful/stats.clean_correct:.4f})")
         if stats.attack_successful > 0:

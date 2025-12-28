@@ -155,3 +155,27 @@ description = "再攻撃前の各種指標を計算 (eps=2/255)"
 command = "rust-script"
 args = ["scripts/metrics_pre.rs", "preprocessed_reattacked_data/cifar10/resnet20/bim, epsilon: 0.03137254901960784, alpha: 0.00392156862745098, iters: 10/gaussian_blur, kernel_size: 3, sigma: 0.5/bim, epsilon: 0.06274509803921569, alpha: 0.00392156862745098, iters: 10/results.csv"]
 
+[tasks.ensenble]
+command = "uv"
+args = [
+    "run",
+    "src/ensemble_reattack.py",
+    "--dataset",
+    "cifar10",
+    "--model",
+    "resnet20",
+    "--attack-eps",
+    "4/255",
+    "--attack-alpha",
+    "1/255",
+    "--attack-n",
+    "10",
+    "--reattack-eps",
+    "4/255",
+    "--reattack-alpha",
+    "1/255",
+    "--reattack-n",
+    "10",
+    "--batch-size",
+    "128",
+]
