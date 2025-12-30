@@ -52,7 +52,7 @@ fn main() -> std::io::Result<()> {
                 "--attack-kind",
                 "bim",
                 "--attack-eps",
-                "8/255",
+                "4/255",
                 "--attack-alpha",
                 "1/255",
                 "--attack-n",

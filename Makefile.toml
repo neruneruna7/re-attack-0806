@@ -179,3 +179,7 @@ args = [
     "--batch-size",
     "128",
 ]
+
+[tasks.ensemble-multi]
+command = "rust-script"
+args = ["./Makefiles/scripts/ensemble-multi.rs"]
