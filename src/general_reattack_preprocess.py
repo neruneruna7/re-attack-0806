@@ -453,7 +453,7 @@ def main():
             writer.writerow([idx, target, pred_c, pred_a, pred_p, pred_r, image_path])
 
     # --- 結果表示 ---
-    print("\n=== Preprocess and Re-Attack Summary ===")
+    print("\n=== Postprocess and Re-Attack Summary ===")
     print("[実験設定]")
     print(f"  データセット: {cfg.dataset.value}, モデル: {cfg.model.value}")
     print(f"  初回攻撃: {attack_params_str}")
