@@ -228,10 +228,25 @@ class Runner:
         target_logits_attacked = logits_attacked.gather(1, target_indices)
         rank_correct_attacked = (logits_attacked > target_logits_attacked).sum(dim=1) + 1
 
+        # =========================================================================
+        # [追加] ガウシアンフィルタによる前処理 (BIM Attack -> Gaussian -> Re-Attack)
+        # =========================================================================
+        # attacked_ts_norm.tensor は正規化されていますが、Gaussian Blurは線形処理のため
+        # そのまま適用しても空間的な平滑化効果は同様に得られます。
+        
+        # カーネルサイズ3, sigma 1.0 でフィルタ適用 (パラメータは必要に応じて変更してください)
+        attacked_blurred_tensor = self.filters.gaussian_blur(attacked_ts_norm.tensor, kernel_size=3, sigma=0.5)
+
+        # フィルタ適用後のテンソルを TensorWithState (NORMALIZED) として再ラップします
+        # これにより後続の run_bim_attack が受け取れる形式になります
+        attacked_ts_norm_filtered = TensorWithState(attacked_blurred_tensor, NORMALIZED)
+
+        # =========================================================================
+
         # 3. 再攻撃 (Re-Attack Defense - BIM)
         reattack_target = pred_attacked.view(-1).long()
         res_reattack = run_bim_attack(
-            self.cfg.reattack_params, attacked_ts_norm, reattack_target, 
+            self.cfg.reattack_params, attacked_ts_norm_filtered, reattack_target, 
             eval_model, self.device, self.cfg.dataset_norm.mean, self.cfg.dataset_norm.std
         )
         reattacked_ts_norm, pred_reattacked, logits_reattacked = res_reattack
