@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 
 fn main() -> std::io::Result<()> {
     // 1. 設定: 変化させるパラメータと出力ファイル名
-    let eps_values = vec!["2/255", "4/255", "8/255", "16/255"];
+    let eps_values = vec!["2/255", "4/255", "8/255"];
     let output_path = "experiment_log1.txt";
 
     println!("実験を開始します。結果は {} に保存されます。", output_path);
