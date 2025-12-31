@@ -433,12 +433,12 @@ def main():
                 # 初回攻撃で誤分類されたサンプルを対象
                 if pred_a != target:
                     stats['attack_successful'] += 1
+                    # 再攻撃の時点で
+                    if pred_r == target:
+                        stats['defense_successful_after_reattack'] += 1
                     # 前処理"のみ"で正解に戻った場合
                     if pred_p == target:
                         stats['defense_successful_by_preprocess'] += 1
-                    # 前処理と再攻撃を経て"最終的に"正解に戻った場合
-                    if pred_r == target:
-                        stats['defense_successful_after_reattack'] += 1
 
             if pred_p == target:
                 # 前処理後に正解だったものが再攻撃で誤分類された場合
@@ -474,8 +474,8 @@ def main():
         print(f"  初回攻撃成功率 (クリーン -> 誤分類): {attack_successful / clean_correct:.4f} ({attack_successful}/{clean_correct})")
     
     if attack_successful > 0:
-        print(f"  防御成功率 (前処理のみ): {defense_by_preprocess / attack_successful:.4f} ({defense_by_preprocess}/{attack_successful})")
-        print(f"  前処理+再攻撃による防御成功率: {defense_after_reattack / attack_successful:.4f} ({defense_after_reattack}/{attack_successful})")
+        print(f"  防御成功率 (再攻撃のみ)): {defense_after_reattack / attack_successful:.4f} ({defense_after_reattack}/{attack_successful})")
+        print(f"  前処理+再攻撃による防御成功率: {defense_by_preprocess / attack_successful:.4f} ({defense_by_preprocess}/{attack_successful})")
     
     reattack_correct_to_original = stats['reattack_correct_to_original']
     if total > 0:
