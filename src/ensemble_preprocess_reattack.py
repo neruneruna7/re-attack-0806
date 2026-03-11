@@ -51,10 +51,19 @@ class ReAttackResult:
     target_label: int
     pred_clean: int
     pred_attacked: int
+    pred_gaussian: int
+    pred_median: int
+    pred_resize_restore: int
     pred_ensemble: int
 
     attack_prob_correct: float
     attack_rank_correct: int
+    gaussian_prob_correct: float
+    gaussian_rank_correct: int
+    median_prob_correct: float
+    median_rank_correct: int
+    resize_restore_prob_correct: float
+    resize_restore_rank_correct: int
     ensemble_prob_correct: float
     ensemble_rank_correct: int
 
@@ -169,9 +178,18 @@ class Runner:
                 target_ts,
                 pred_clean,
                 pred_attacked,
+                pred_gaussian,
+                pred_median,
+                pred_resize_restore,
                 pred_ensemble,
                 prob_a,
                 rank_a,
+                prob_g,
+                rank_g,
+                prob_m,
+                rank_m,
+                prob_r,
+                rank_r,
                 prob_e,
                 rank_e,
                 sample_reattacked_denorm,
@@ -186,9 +204,18 @@ class Runner:
                     target_label=target_ts[j].item().as_integer_ratio()[0],
                     pred_clean=pred_clean.view(-1)[j].item().as_integer_ratio()[0],
                     pred_attacked=pred_attacked.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_gaussian=pred_gaussian.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_median=pred_median.view(-1)[j].item().as_integer_ratio()[0],
+                    pred_resize_restore=pred_resize_restore.view(-1)[j].item().as_integer_ratio()[0],
                     pred_ensemble=pred_ensemble.view(-1)[j].item().as_integer_ratio()[0],
                     attack_prob_correct=prob_a[j].item(),
                     attack_rank_correct=rank_a[j].item(),
+                    gaussian_prob_correct=prob_g[j].item(),
+                    gaussian_rank_correct=rank_g[j].item(),
+                    median_prob_correct=prob_m[j].item(),
+                    median_rank_correct=rank_m[j].item(),
+                    resize_restore_prob_correct=prob_r[j].item(),
+                    resize_restore_rank_correct=rank_r[j].item(),
                     ensemble_prob_correct=prob_e[j].item(),
                     ensemble_rank_correct=rank_e[j].item(),
                     reattacked_image_ts=TensorWithState(sample_reattacked_denorm[j].detach().cpu(), DENORMALIZED),
@@ -224,19 +251,18 @@ class Runner:
         rank_correct_attacked = (logits_attacked > target_logits_attacked).sum(dim=1) + 1
 
         branches: List[Tuple[str, Callable[[Tensor], Tensor]]] = [
-            # ("none", lambda x: x),
             ("gaussian", lambda x: self.filters.gaussian_blur(x, kernel_size=3, sigma=1.0)),
             ("median", lambda x: self.filters.median_filter(x, kernel_size=3)),
             ("resize_restore", lambda x: self.filters.resize_restore(x, scale_factor=0.9)),
         ]
 
-        branch_logits_list = []
+        branch_logits_map: dict[str, Tensor] = {}
         representative_reattacked_denorm = None
         reattack_target = pred_attacked.view(-1).long()
 
         for name, preprocess_fn in branches:
             # 画像処理: 初回攻撃後の入力に対して各分岐の前処理を適用する。
-            # ここでは none / gaussian / median / resize_restore の 4 分岐を作る。
+            # ここでは gaussian / median / resize_restore の 3 分岐を作る。
             # 既存の分岐実装との整合性を優先し、正規化済みテンソルに直接前処理を適用する。
             preprocessed_tensor = preprocess_fn(attacked_ts_norm.tensor)
             preprocessed_ts_norm = TensorWithState(preprocessed_tensor, NORMALIZED)
@@ -252,18 +278,41 @@ class Runner:
                 self.cfg.dataset_norm.mean,
                 self.cfg.dataset_norm.std,
             )
-            branch_logits_list.append(logits_branch)
+            branch_logits_map[name] = logits_branch
 
-            if name == "none":
-                # 保存画像は基準分岐として no-preprocess の再攻撃結果を使う。
+            if representative_reattacked_denorm is None:
+                # 保存画像は先頭の前処理分岐の再攻撃結果を代表として使う。
                 representative_reattacked_denorm = self.cfg.dataset_norm.denormalize(reattacked_ts_norm).tensor
 
         if representative_reattacked_denorm is None:
             raise RuntimeError("Representative branch image was not generated.")
 
-        # アンサンブル: 4 分岐それぞれの再攻撃後ロジットを積み上げ、平均して最終予測を作る。
+        gaussian_logits = branch_logits_map["gaussian"]
+        median_logits = branch_logits_map["median"]
+        resize_restore_logits = branch_logits_map["resize_restore"]
+
+        pred_gaussian = gaussian_logits.max(1, keepdim=True)[1]
+        pred_median = median_logits.max(1, keepdim=True)[1]
+        pred_resize_restore = resize_restore_logits.max(1, keepdim=True)[1]
+
+        probs_gaussian = F.softmax(gaussian_logits, dim=1)
+        prob_correct_gaussian = probs_gaussian.gather(1, target_indices).view(-1)
+        target_logits_gaussian = gaussian_logits.gather(1, target_indices)
+        rank_correct_gaussian = (gaussian_logits > target_logits_gaussian).sum(dim=1) + 1
+
+        probs_median = F.softmax(median_logits, dim=1)
+        prob_correct_median = probs_median.gather(1, target_indices).view(-1)
+        target_logits_median = median_logits.gather(1, target_indices)
+        rank_correct_median = (median_logits > target_logits_median).sum(dim=1) + 1
+
+        probs_resize_restore = F.softmax(resize_restore_logits, dim=1)
+        prob_correct_resize_restore = probs_resize_restore.gather(1, target_indices).view(-1)
+        target_logits_resize_restore = resize_restore_logits.gather(1, target_indices)
+        rank_correct_resize_restore = (resize_restore_logits > target_logits_resize_restore).sum(dim=1) + 1
+
+        # アンサンブル: 3 分岐それぞれの再攻撃後ロジットを積み上げ、平均して最終予測を作る。
         # この平均ロジットに対して softmax / rank を計算し、アンサンブル後の性能を評価する。
-        stacked_logits = torch.stack(branch_logits_list)
+        stacked_logits = torch.stack([gaussian_logits, median_logits, resize_restore_logits])
         mean_logits = torch.mean(stacked_logits, dim=0)
         pred_ensemble = mean_logits.max(1, keepdim=True)[1]
 
@@ -277,9 +326,18 @@ class Runner:
             target_ts,
             pred_clean,
             pred_attacked,
+            pred_gaussian,
+            pred_median,
+            pred_resize_restore,
             pred_ensemble,
             prob_correct_attacked,
             rank_correct_attacked,
+            prob_correct_gaussian,
+            rank_correct_gaussian,
+            prob_correct_median,
+            rank_correct_median,
+            prob_correct_resize_restore,
+            rank_correct_resize_restore,
             prob_correct_ensemble,
             rank_correct_ensemble,
             representative_reattacked_denorm,
@@ -358,11 +416,23 @@ class ExperimentStats:
     total: int = 0
     clean_correct: int = 0
     attack_successful: int = 0
+    gaussian_successful_to_clean: int = 0
+    gaussian_correct: int = 0
+    median_successful_to_clean: int = 0
+    median_correct: int = 0
+    resize_restore_successful_to_clean: int = 0
+    resize_restore_correct: int = 0
     ensemble_successful_to_clean: int = 0
     ensemble_correct: int = 0
 
     prob_correct_attack_list: list = field(default_factory=list)
     rank_correct_attack_list: list = field(default_factory=list)
+    prob_correct_gaussian_list: list = field(default_factory=list)
+    rank_correct_gaussian_list: list = field(default_factory=list)
+    prob_correct_median_list: list = field(default_factory=list)
+    rank_correct_median_list: list = field(default_factory=list)
+    prob_correct_resize_restore_list: list = field(default_factory=list)
+    rank_correct_resize_restore_list: list = field(default_factory=list)
     prob_correct_ensemble_list: list = field(default_factory=list)
     rank_correct_ensemble_list: list = field(default_factory=list)
 
@@ -383,9 +453,18 @@ def main():
         "target_label",
         "pred_clean",
         "pred_attacked",
+        "pred_gaussian",
+        "pred_median",
+        "pred_resize_restore",
         "pred_ensemble",
         "prob_correct_attack",
         "rank_correct_attack",
+        "prob_correct_gaussian",
+        "rank_correct_gaussian",
+        "prob_correct_median",
+        "rank_correct_median",
+        "prob_correct_resize_restore",
+        "rank_correct_resize_restore",
         "prob_correct_ensemble",
         "rank_correct_ensemble",
         "image_path",
@@ -399,6 +478,12 @@ def main():
 
         for res in result_generator:
             stats.total += 1
+            if res.pred_gaussian == res.target_label:
+                stats.gaussian_correct += 1
+            if res.pred_median == res.target_label:
+                stats.median_correct += 1
+            if res.pred_resize_restore == res.target_label:
+                stats.resize_restore_correct += 1
             if res.pred_ensemble == res.target_label:
                 stats.ensemble_correct += 1
 
@@ -408,9 +493,21 @@ def main():
                     stats.attack_successful += 1
                     stats.prob_correct_attack_list.append(res.attack_prob_correct)
                     stats.rank_correct_attack_list.append(res.attack_rank_correct)
+                    stats.prob_correct_gaussian_list.append(res.gaussian_prob_correct)
+                    stats.rank_correct_gaussian_list.append(res.gaussian_rank_correct)
+                    stats.prob_correct_median_list.append(res.median_prob_correct)
+                    stats.rank_correct_median_list.append(res.median_rank_correct)
+                    stats.prob_correct_resize_restore_list.append(res.resize_restore_prob_correct)
+                    stats.rank_correct_resize_restore_list.append(res.resize_restore_rank_correct)
                     stats.prob_correct_ensemble_list.append(res.ensemble_prob_correct)
                     stats.rank_correct_ensemble_list.append(res.ensemble_rank_correct)
 
+                    if res.pred_gaussian == res.target_label:
+                        stats.gaussian_successful_to_clean += 1
+                    if res.pred_median == res.target_label:
+                        stats.median_successful_to_clean += 1
+                    if res.pred_resize_restore == res.target_label:
+                        stats.resize_restore_successful_to_clean += 1
                     if res.pred_ensemble == res.target_label:
                         stats.ensemble_successful_to_clean += 1
 
@@ -425,9 +522,18 @@ def main():
                 res.target_label,
                 res.pred_clean,
                 res.pred_attacked,
+                res.pred_gaussian,
+                res.pred_median,
+                res.pred_resize_restore,
                 res.pred_ensemble,
                 res.attack_prob_correct,
                 res.attack_rank_correct,
+                res.gaussian_prob_correct,
+                res.gaussian_rank_correct,
+                res.median_prob_correct,
+                res.median_rank_correct,
+                res.resize_restore_prob_correct,
+                res.resize_restore_rank_correct,
                 res.ensemble_prob_correct,
                 res.ensemble_rank_correct,
                 image_path,
@@ -439,14 +545,23 @@ def main():
             except Exception as e:
                 print(f"Image save error: {e}")
 
-    print("\n=== 4分岐前処理後の再攻撃アンサンブル結果 (BIM Only) ===")
+    print("\n=== 3分岐前処理後の再攻撃・アンサンブル結果 (BIM Only) ===")
     print(f"  Total Samples: {stats.total}")
     print(f"  Clean Accuracy: {stats.clean_correct}/{stats.total} ({stats.clean_correct/stats.total:.4f})")
+    print("\n  [画像処理 + 再攻撃 の結果]")
+    print(f"  Gaussian Accuracy (All): {stats.gaussian_correct}/{stats.total} ({stats.gaussian_correct/stats.total:.4f})")
+    print(f"  Median Accuracy (All): {stats.median_correct}/{stats.total} ({stats.median_correct/stats.total:.4f})")
+    print(f"  ResizeRestore Accuracy (All): {stats.resize_restore_correct}/{stats.total} ({stats.resize_restore_correct/stats.total:.4f})")
+    print("\n  [画像処理 + 再攻撃 + アンサンブル の結果]")
     print(f"  Ensemble Accuracy (All): {stats.ensemble_correct}/{stats.total} ({stats.ensemble_correct/stats.total:.4f})")
 
     if stats.clean_correct > 0:
         print(f"  Attack Success Rate: {stats.attack_successful}/{stats.clean_correct} ({stats.attack_successful/stats.clean_correct:.4f})")
         if stats.attack_successful > 0:
+            print("\n  [攻撃成功サンプルに対する回復率]")
+            print(f"  Gaussian Recovery (Top-1): {stats.gaussian_successful_to_clean}/{stats.attack_successful} ({stats.gaussian_successful_to_clean/stats.attack_successful:.4f})")
+            print(f"  Median Recovery (Top-1): {stats.median_successful_to_clean}/{stats.attack_successful} ({stats.median_successful_to_clean/stats.attack_successful:.4f})")
+            print(f"  ResizeRestore Recovery (Top-1): {stats.resize_restore_successful_to_clean}/{stats.attack_successful} ({stats.resize_restore_successful_to_clean/stats.attack_successful:.4f})")
             print(f"  Ensemble Recovery (Top-1): {stats.ensemble_successful_to_clean}/{stats.attack_successful} ({stats.ensemble_successful_to_clean/stats.attack_successful:.4f})")
 
             def print_stats(name, data):
@@ -457,6 +572,9 @@ def main():
 
             print("\n  [詳細統計 (攻撃成功サンプルのみ)]")
             print_stats("Attack Rank", stats.rank_correct_attack_list)
+            print_stats("Gaussian Rank", stats.rank_correct_gaussian_list)
+            print_stats("Median Rank", stats.rank_correct_median_list)
+            print_stats("ResizeRestore Rank", stats.rank_correct_resize_restore_list)
             print_stats("Ensemble Rank", stats.rank_correct_ensemble_list)
 
     print(f"Saved to {csv_filename}")
