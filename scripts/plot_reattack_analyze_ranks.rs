@@ -15,6 +15,8 @@ use std::env;
 use std::error::Error;
 use std::fs;
 
+const FONT_NAME: &str = "Hiragino Kaku Gothic ProN";
+
 #[derive(Debug, serde::Deserialize)]
 struct Record {
     index: usize,
@@ -64,21 +66,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     fs::create_dir_all("plots")?;
 
-    draw_scatter_plot(&data_points, "plots/1_rank_scatter.png")?;
-    println!("Saved plots/1_rank_scatter.png");
+    draw_scatter_plot(&data_points, "plots/1_rank_scatter.svg")?;
+    println!("Saved plots/1_rank_scatter.svg");
 
-    draw_heatmap(&data_points, "plots/2_rank_transition.png")?;
-    println!("Saved plots/2_rank_transition.png");
+    draw_heatmap(&data_points, "plots/2_rank_transition.svg")?;
+    println!("Saved plots/2_rank_transition.svg");
 
-    draw_histogram(&data_points, "plots/3_rank_improvement.png")?;
-    println!("Saved plots/3_rank_improvement.png");
+    draw_histogram(&data_points, "plots/3_rank_improvement.svg")?;
+    println!("Saved plots/3_rank_improvement.svg");
 
     Ok(())
 }
 
 /// 散布図を描画する関数
 fn draw_scatter_plot(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn Error>> {
-    let root = BitMapBackend::new(out_path, (800, 800)).into_drawing_area();
+    let root = SVGBackend::new(out_path, (800, 800)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let max_rank = data
@@ -145,7 +147,7 @@ fn draw_scatter_plot(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn 
 
 /// ヒートマップ（遷移行列）を描画する関数
 fn draw_heatmap(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn Error>> {
-    let root = BitMapBackend::new(out_path, (1024, 800)).into_drawing_area();
+    let root = SVGBackend::new(out_path, (1024, 800)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let max_rank = 10; // 表示する最大ランク
@@ -179,33 +181,32 @@ fn draw_heatmap(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn Error
     let range = 0.5..(display_max as f64 + 0.5);
 
     let mut chart = ChartBuilder::on(&root)
-        .caption(
-            "Rank Transition Matrix (Counts)",
-            ("sans-serif", 40).into_font(),
-        )
+        .caption("正解ラベルの順位変化", (FONT_NAME, 40).into_font())
         .margin(20)
-        .x_label_area_size(40)
-        .y_label_area_size(40)
+        .x_label_area_size(70)
+        .y_label_area_size(70)
         .build_cartesian_2d(range.clone(), range.clone())?;
 
     chart
         .configure_mesh()
         .x_labels(display_max as usize) // ラベル数を合わせる
         .y_labels(display_max as usize)
-        .x_desc("Rank after Attack")
-        .y_desc("Rank after Re-Attack")
+        .x_desc("攻撃後の順位")
+        .y_desc("再攻撃後の順位")
+        .axis_desc_style((FONT_NAME, 35).into_font())
+        .label_style((FONT_NAME, 25).into_font())
         .disable_x_mesh()
         .disable_y_mesh()
         .x_label_formatter(&|v| {
             if *v > 10.5 {
-                ">10".to_string()
+                "".to_string()
             } else {
                 format!("{:.0}", v)
             }
         }) // >10 の表記
         .y_label_formatter(&|v| {
             if *v > 10.5 {
-                ">10".to_string()
+                "".to_string()
             } else {
                 format!("{:.0}", v)
             }
@@ -236,7 +237,7 @@ fn draw_heatmap(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn Error
                         + Text::new(
                             format!("{}", count),
                             (0, 0), // 中心に配置
-                            ("sans-serif", 15).into_font().color(&text_color),
+                            ("sans-serif", 25).into_font().color(&text_color),
                         ),
                 ))?;
             }
@@ -248,7 +249,7 @@ fn draw_heatmap(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn Error
 
 /// 改善量ヒストグラムを描画する関数
 fn draw_histogram(data: &[(u32, u32)], out_path: &str) -> Result<(), Box<dyn Error>> {
-    let root = BitMapBackend::new(out_path, (800, 600)).into_drawing_area();
+    let root = SVGBackend::new(out_path, (800, 600)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let improvements: Vec<i32> = data.iter().map(|(a, r)| *a as i32 - *r as i32).collect();
