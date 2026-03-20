@@ -183,3 +183,12 @@ args = [
 [tasks.ensemble-multi]
 command = "rust-script"
 args = ["./Makefiles/scripts/ensemble-multi.rs"]
+
+[tasks.ensemble-branch-multi]
+command = "rust-script"
+args = ["./Makefiles/scripts/ensemble-branch-multi.rs"]
+
+[tasks.ensemble-preprocess-multi]
+description = "CIFAR-10: 4-way preprocess -> BIM re-attack per branch -> logit ensemble (複数の eps)"
+command = "rust-script"
+args = ["./Makefiles/scripts/ensemble-preprocess-multi.rs"]
