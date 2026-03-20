@@ -3,13 +3,10 @@ use burn::prelude::*;
 use burn::tensor::backend::AutodiffBackend;
 use tracing::info;
 
-/// モデルがBIM攻撃に対応するために実装すべきトレイト
-/// BurnのModuleはデフォルトではforwardを強制しないため、これを定義して呼び出しを保証します。
-pub trait ClassificationModel<B: Backend>: Module<B> {
-    fn forward(&self, input: Tensor<B, 4>) -> Tensor<B, 2>;
-}
+// 新しい攻撃モジュールからClassificationModelを再エクスポート
+pub use crate::attack::ClassificationModel;
 
-/// BIM (Basic Iterative Method) 攻撃の実装
+/// BIM (Basic Iterative Method) 攻撃の実装（後方互換性のための関数版）
 pub fn bim_attack<B, M>(
     input: Tensor<B, 4>,
     target: Tensor<B, 1, Int>,

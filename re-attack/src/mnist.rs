@@ -1,22 +1,22 @@
 use burn::{
     config,
     nn::{
-        Dropout, DropoutConfig, Linear, LinearConfig, Relu,
         conv::{Conv2d, Conv2dConfig},
         pool::{AdaptiveAvgPool2d, AdaptiveAvgPool2dConfig},
+        Dropout, DropoutConfig, Linear, LinearConfig, Relu,
     },
     prelude::*,
 };
-#[derive(Module, Debug)]
-pub struct Mnist<B: Backend> {
-    conv1: Conv2d<B>,
-    conv2: Conv2d<B>,
-    conv3: Conv2d<B>,
-    fc1: Linear<B>,
-    fc2: Linear<B>,
-    dropout: Dropout,
-    activation: Relu,
-}
+// #[derive(Module, Debug)]
+// pub struct Mnist<B: Backend> {
+//     conv1: Conv2d<B>,
+//     conv2: Conv2d<B>,
+//     conv3: Conv2d<B>,
+//     fc1: Linear<B>,
+//     fc2: Linear<B>,
+//     dropout: Dropout,
+//     activation: Relu,
+// }
 
 #[derive(Config, Debug)]
 pub struct MnistConfig {

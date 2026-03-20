@@ -1,7 +1,7 @@
 use crate::{
-    ARTIFACT_DIR,
-    data::MnistBacher,
+    data::{MnistBacher, MnistBatch},
     resnet18::{ResNet18, ResNet18Config},
+    ARTIFACT_DIR,
 };
 
 use burn::{
@@ -9,18 +9,20 @@ use burn::{
         dataloader::{self, DataLoaderBuilder},
         dataset::vision::MnistDataset,
     },
-    optim::{AdamConfig, decay::WeightDecayConfig},
+    optim::{decay::WeightDecayConfig, AdamConfig},
     prelude::*,
     record::{CompactRecorder, NoStdTrainingRecorder},
     tensor::backend::AutodiffBackend,
     train::{
-        LearnerBuilder, MetricEarlyStoppingStrategy, StoppingCondition,
         metric::{
-            AccuracyMetric, CpuMemory, CpuTemperature, CpuUse, LossMetric,
             store::{Aggregate, Direction, Split},
+            AccuracyMetric, CpuMemory, CpuTemperature, CpuUse, LossMetric,
         },
+        ClassificationOutput, LearnerBuilder, MetricEarlyStoppingStrategy, StoppingCondition,
+        TrainOutput, TrainStep, ValidStep,
     },
 };
+use resnet_burn::ResNet;
 
 #[derive(Config, Debug)]
 pub struct MnistTrainingConfig {
@@ -57,6 +59,7 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
     B::seed(&device, config.seed);
 
     // let model = ResNet18::<B>::new(&device);
+    let model = ResNet::<B>::resnet18(10, &device);
 
     // データ
     let batcher = MnistBacher::default();
@@ -94,11 +97,7 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
         ))
         .num_epochs(config.num_epochs)
         .summary()
-        .build(
-            config.model.init::<B>(&device),
-            config.optimizer.init(),
-            1e-4,
-        );
+        .build(model, config.optimizer.init(), 1e-4);
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 
@@ -106,4 +105,26 @@ pub fn run<B: AutodiffBackend>(artifact_dir: &str, config: MnistTrainingConfig, 
         .model
         .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
         .expect("Failed to save trained model");
+}
+
+impl<B: AutodiffBackend> TrainStep<MnistBatch<B>, ClassificationOutput<B>> for ResNet<B> {
+    fn step(&self, item: MnistBatch<B>) -> burn::train::TrainOutput<ClassificationOutput<B>> {
+        let item = self.forward(item);
+
+        TrainOutput::new(self, item.loss.backward(), item)
+    }
+}
+
+impl<B: Backend> ValidStep<MnistBatch<B>, ClassificationOutput<B>> for ResNet<B> {
+    fn step(&self, item: MnistBatch<B>) -> ClassificationOutput<B> {
+        self.forward(item)
+    }
+}
+
+use crate::ClassificationModel;
+
+impl<B: Backend> ClassificationModel<B> for ResNet<B> {
+    fn forward(&self, input: Tensor<B, 4>) -> Tensor<B, 2> {
+        self.forward(input)
+    }
 }

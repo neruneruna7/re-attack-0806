@@ -9,7 +9,7 @@ pub struct MnistBacher {}
 
 #[derive(Debug, Clone)]
 pub struct MnistBatch<B: Backend> {
-    pub images: Tensor<B, 3>,
+    pub images: Tensor<B, 4>,
     pub targets: Tensor<B, 1, Int>,
 }
 
@@ -22,7 +22,7 @@ impl<B: Backend> Batcher<B, MnistItem, MnistBatch<B>> for MnistBacher {
                 // example見たら，バックエンドのところがNdArrayだった.なぜ？
                 Tensor::<B, 2>::from_data(data.convert::<B::FloatElem>(), device)
             })
-            .map(|tensor| tensor.reshape([1, 28, 28]))
+            .map(|tensor| tensor.reshape([1, 1, 28, 28]))
             // 画素値を平均0，標準偏差1にしているらしい？ 学習を安定させるため？
             .map(|tensor| ((tensor / 255) - 0.1307) / 0.3081)
             .collect();

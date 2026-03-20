@@ -4,7 +4,7 @@ use burn::{
     module::Module,
     prelude::Backend,
     record::{CompactRecorder, Recorder},
-    tensor::{Int, Tensor, TensorData, backend::AutodiffBackend, cast::ToElement},
+    tensor::{backend::AutodiffBackend, cast::ToElement, Int, Tensor, TensorData},
 };
 
 use crate::{
@@ -19,14 +19,14 @@ pub fn infer<B: AutodiffBackend>(artifact_dir: &str, device: B::Device, item: Mn
     let batcher = MnistBacher::default();
     let batch = batcher.batch(vec![item], &device);
 
-    let [batch_size, height, width] = batch.images.dims();
-    // チャネル数1を加えて，4次元に変換
-    let image = batch
-        .images
-        .reshape([batch_size, 1, height, width])
-        .detach();
+    // let [batch_size, dims, height, width] = batch.images.dims();
+    // // チャネル数1を加えて，4次元に変換
+    // let image = batch
+    //     .images
+    //     .reshape([batch_size, 1, height, width])
+    //     .detach();
 
-    let output = model.forward(image);
+    let output = model.forward(batch.images);
 
     let predicated = output.argmax(1).flatten::<1>(0, 1).into_scalar();
     println!("Predicted: {predicated}, Expected: {label}");
